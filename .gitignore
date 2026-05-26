@@ -1,8 +1,10 @@
 # Keep the upstream RAGFlow checkout outside this base repository.
 ragflow/
 
-# Local assistant/session files.
-.claude/
+# Project agent skills and conventions.
+!.claude/
+!.claude/skills/
+!.claude/skills/**
 
 # Dependencies and build outputs.
 **/node_modules/
