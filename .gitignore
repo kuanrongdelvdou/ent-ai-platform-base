@@ -1,0 +1,44 @@
+# Keep the upstream RAGFlow checkout outside this base repository.
+ragflow/
+
+# Local assistant/session files.
+.claude/
+
+# Dependencies and build outputs.
+**/node_modules/
+**/dist/
+**/dist-ssr/
+**/coverage/
+**/.turbo/
+**/.next/
+**/.nuxt/
+**/.output/
+**/.vite/
+**/.cache/
+
+# Environment files. Commit only explicit examples.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+
+# Nested repository metadata or backups.
+**/.git
+**/.git/
+**/.git.bak/
+**/.git-backup/
+
+# Logs and OS/editor files.
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json

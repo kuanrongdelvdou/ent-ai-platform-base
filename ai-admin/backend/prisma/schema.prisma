@@ -1,0 +1,188 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// 部门
+model Department {
+  id        String   @id @default(uuid())
+  parentId  String?  @map("parent_id")
+  name      String
+  sort      Int      @default(0)
+  leaderId  String?  @map("leader_id")
+  status    Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  parent   Department?  @relation("DeptTree", fields: [parentId], references: [id])
+  children Department[] @relation("DeptTree")
+  users    User[]
+
+  @@map("departments")
+}
+
+// 用户
+model User {
+  id         String   @id @default(uuid())
+  username   String   @unique
+  password   String
+  realName   String?  @map("real_name")
+  email      String?
+  phone      String?
+  status     Int      @default(1)
+  deptId     String?  @map("dept_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  dept          Department?    @relation(fields: [deptId], references: [id])
+  userRoles     UserRole[]
+  operationLogs OperationLog[]
+  loginLogs     LoginLog[]
+
+  @@map("users")
+}
+
+// 角色
+model Role {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  status    Int      @default(1)
+  remark    String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  userRoles UserRole[]
+  roleMenus RoleMenu[]
+
+  @@map("roles")
+}
+
+// 用户角色关联
+model UserRole {
+  userId String @map("user_id")
+  roleId String @map("role_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+// 菜单
+model Menu {
+  id         String   @id @default(uuid())
+  parentId   String?  @map("parent_id")
+  name       String
+  type       Int      @default(1)
+  path       String?
+  component  String?
+  icon       String?
+  permission String?
+  sort       Int      @default(0)
+  status     Int      @default(1)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  parent    Menu?      @relation("MenuTree", fields: [parentId], references: [id])
+  children  Menu[]     @relation("MenuTree")
+  roleMenus RoleMenu[]
+
+  @@map("menus")
+}
+
+// 角色菜单关联
+model RoleMenu {
+  roleId String @map("role_id")
+  menuId String @map("menu_id")
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, menuId])
+  @@map("role_menus")
+}
+
+// 字典类型
+model DictType {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  status    Int      @default(1)
+  remark    String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items DictItem[]
+
+  @@map("dict_types")
+}
+
+// 字典数据
+model DictItem {
+  id         String   @id @default(uuid())
+  dictTypeId String   @map("dict_type_id")
+  label      String
+  value      String
+  sort       Int      @default(0)
+  status     Int      @default(1)
+  remark     String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  dictType DictType @relation(fields: [dictTypeId], references: [id], onDelete: Cascade)
+
+  @@map("dict_items")
+}
+
+// 系统参数配置
+model Config {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  remark    String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("configs")
+}
+
+// 操作日志
+model OperationLog {
+  id           String   @id @default(uuid())
+  userId       String?  @map("user_id")
+  username     String?
+  module       String?
+  action       String?
+  method       String?
+  url          String?
+  ip           String?
+  requestBody  Json?    @map("request_body")
+  responseCode Int?     @map("response_code")
+  duration     Int?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("operation_logs")
+}
+
+// 登录日志
+model LoginLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  username  String?
+  ip        String?
+  userAgent String?  @map("user_agent")
+  status    Int      @default(1)
+  message   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("login_logs")
+}
