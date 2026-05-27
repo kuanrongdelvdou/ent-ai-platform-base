@@ -110,8 +110,6 @@ declare namespace Env {
     readonly VITE_PROXY_LOG?: CommonType.YesOrNo;
     /** The launch editor */
     readonly VITE_DEVTOOLS_LAUNCH_EDITOR?: import('vite-plugin-vue-devtools').VitePluginVueDevToolsOptions['launchEditor'];
-    /** RAGFlow web console url */
-    readonly VITE_RAGFLOW_WEB_URL?: string;
   }
 }
 

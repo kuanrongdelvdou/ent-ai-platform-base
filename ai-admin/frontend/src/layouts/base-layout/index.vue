@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue';
-import { useRoute } from 'vue-router';
 import { AdminLayout, LAYOUT_SCROLL_EL_ID } from '@sa/materials';
 import type { LayoutMode } from '@sa/materials';
 import { useAppStore } from '@/store/modules/app';
@@ -18,22 +17,10 @@ defineOptions({
 });
 
 const appStore = useAppStore();
-const route = useRoute();
 const themeStore = useThemeStore();
 const { secondLevelMenus, childLevelMenus, isActiveFirstLevelMenuHasChildren } = provideMixMenuContext();
 
 const GlobalMenu = defineAsyncComponent(() => import('../modules/global-menu/index.vue'));
-
-const isImmersiveContent = computed(() => route.name === 'knowledge_knowledge-base');
-
-const contentClass = computed(() => {
-  const classes: string[] = [];
-
-  if (appStore.contentXScrollable) classes.push('overflow-x-hidden');
-  if (isImmersiveContent.value) classes.push('overflow-hidden');
-
-  return classes.join(' ');
-});
 
 const layoutMode = computed(() => {
   const vertical: LayoutMode = 'vertical';
@@ -137,30 +124,30 @@ function getSiderAndCollapsedWidth(isCollapsed: boolean) {
     :scroll-mode="themeStore.layout.scrollMode"
     :is-mobile="appStore.isMobile"
     :full-content="appStore.fullContent"
-    :fixed-top="themeStore.fixedHeaderAndTab && !isImmersiveContent"
-    :header-height="isImmersiveContent ? 0 : themeStore.header.height"
-    :tab-visible="!isImmersiveContent && themeStore.tab.visible"
+    :fixed-top="themeStore.fixedHeaderAndTab"
+    :header-height="themeStore.header.height"
+    :tab-visible="themeStore.tab.visible"
     :tab-height="themeStore.tab.height"
-    :content-class="contentClass"
+    :content-class="appStore.contentXScrollable ? 'overflow-x-hidden' : ''"
     :sider-visible="siderVisible"
     :sider-width="siderWidth"
     :sider-collapsed-width="siderCollapsedWidth"
-    :footer-visible="!isImmersiveContent && themeStore.footer.visible"
+    :footer-visible="themeStore.footer.visible"
     :footer-height="themeStore.footer.height"
     :fixed-footer="themeStore.footer.fixed"
     :right-footer="themeStore.footer.right"
   >
-    <template v-if="!isImmersiveContent" #header>
+    <template #header>
       <GlobalHeader v-bind="headerProps" />
     </template>
-    <template v-if="!isImmersiveContent" #tab>
+    <template #tab>
       <GlobalTab />
     </template>
     <template #sider>
       <GlobalSider />
     </template>
     <GlobalMenu />
-    <GlobalContent :show-padding="!isImmersiveContent" />
+    <GlobalContent />
     <ThemeDrawer />
     <template #footer>
       <GlobalFooter />
