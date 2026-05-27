@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { RouteModule } from './route/route.module';
 import { SystemManageModule } from './system-manage/system-manage.module';
+import { KnowledgeModule } from './knowledge/knowledge.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { OperationLogInterceptor } from './common/interceptors/operation-log.interceptor';
@@ -18,6 +19,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     AuthModule,
     RouteModule,
     SystemManageModule,
+    KnowledgeModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

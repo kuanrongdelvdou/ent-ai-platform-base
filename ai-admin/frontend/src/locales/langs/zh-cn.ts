@@ -226,6 +226,8 @@ const local: App.I18n.Schema = {
     500: '服务器错误',
     'iframe-page': '外链页面',
     home: '首页',
+    knowledge: '知识库',
+    'knowledge_knowledge-base': '知识库管理',
     system: '系统管理',
     system_user: '用户管理',
     system_role: '角色管理',

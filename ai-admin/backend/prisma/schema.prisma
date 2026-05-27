@@ -57,6 +57,7 @@ model Role {
 
   userRoles UserRole[]
   roleMenus RoleMenu[]
+  knowledgeBaseRoles KnowledgeBaseRole[]
 
   @@map("roles")
 }
@@ -169,6 +170,34 @@ model OperationLog {
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@map("operation_logs")
+}
+
+// 知识库
+model KnowledgeBase {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  datasetId   String?  @map("dataset_id")
+  chunkMethod String?  @map("chunk_method")
+  parserConfig Json?   @map("parser_config")
+  status      Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  knowledgeBaseRoles KnowledgeBaseRole[]
+
+  @@map("knowledge_bases")
+}
+
+model KnowledgeBaseRole {
+  kbId   String @map("kb_id")
+  roleId String @map("role_id")
+
+  knowledgeBase KnowledgeBase @relation(fields: [kbId], references: [id], onDelete: Cascade)
+  role          Role          @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([kbId, roleId])
+  @@map("knowledge_base_roles")
 }
 
 // 登录日志

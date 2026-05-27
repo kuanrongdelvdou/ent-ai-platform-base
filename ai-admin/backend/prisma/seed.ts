@@ -69,6 +69,15 @@ async function main() {
     },
   });
 
+  // 知识库目录
+  const knowledgeMenu = await prisma.menu.create({
+    data: {
+      parentId: null, type: 1, name: 'knowledge',
+      path: '/knowledge', component: 'layout.base',
+      icon: 'carbon:data-base', sort: 40, status: 1,
+    },
+  });
+
   // 系统管理子菜单
   const systemChildren = [
     { name: 'system_user',  path: '/system/user',  component: 'layout.base$view.system_user',  icon: 'carbon:user',       sort: 1 },
@@ -107,6 +116,17 @@ async function main() {
     });
   }
 
+  // 知识库子菜单
+  const knowledgeChildren = [
+    { name: 'knowledge_knowledge-base', path: '/knowledge/knowledge-base', component: 'layout.base$view.knowledge_knowledge-base', icon: 'carbon:folder-details', sort: 1 },
+  ];
+
+  for (const c of knowledgeChildren) {
+    await prisma.menu.create({
+      data: { parentId: knowledgeMenu.id, type: 2, name: c.name, path: c.path, component: c.component, icon: c.icon, sort: c.sort, status: 1 },
+    });
+  }
+
   const buttonGroups = [
     { page: 'system_user', prefix: 'user', label: '用户' },
     { page: 'system_role', prefix: 'role', label: '角色' },
@@ -114,6 +134,7 @@ async function main() {
     { page: 'system_dept', prefix: 'dept', label: '部门' },
     { page: 'tool_dict', prefix: 'dict', label: '字典' },
     { page: 'tool_config', prefix: 'config', label: '参数' },
+    { page: 'knowledge_knowledge-base', prefix: 'knowledge', label: '知识库' },
   ];
   const actions = [
     { code: 'add', label: '新增', sort: 1 },
@@ -138,11 +159,34 @@ async function main() {
     });
   }
 
+  const knowledgePage = await prisma.menu.findFirstOrThrow({ where: { name: 'knowledge_knowledge-base' } });
+  await prisma.menu.create({
+    data: {
+      parentId: knowledgePage.id,
+      type: 3,
+      name: 'knowledge_search',
+      permission: 'knowledge:search',
+      sort: 4,
+      status: 1,
+      path: null,
+      component: null,
+      icon: null,
+    },
+  });
+
   // 给超级管理员角色分配所有菜单
   const allMenus = await prisma.menu.findMany({ select: { id: true } });
   await prisma.roleMenu.createMany({
     data: allMenus.map((m) => ({ roleId: superRole.id, menuId: m.id })),
   });
+
+  const allKnowledgeBases = await prisma.knowledgeBase.findMany({ select: { id: true } });
+  if (allKnowledgeBases.length) {
+    await prisma.knowledgeBaseRole.createMany({
+      data: allKnowledgeBases.map((kb) => ({ kbId: kb.id, roleId: superRole.id })),
+      skipDuplicates: true,
+    });
+  }
 
   console.log('✓ 菜单已重建，共', allMenus.length, '条');
   console.log('✓ Seed 完成');

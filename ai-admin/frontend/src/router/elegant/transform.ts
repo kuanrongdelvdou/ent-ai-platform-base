@@ -168,6 +168,8 @@ const routeMap: RouteMap = {
   "500": "/500",
   "home": "/home",
   "iframe-page": "/iframe-page/:url",
+  "knowledge": "/knowledge",
+  "knowledge_knowledge-base": "/knowledge/knowledge-base",
   "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?",
   "monitor": "/monitor",
   "monitor_login-log": "/monitor/login-log",
