@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsInt, IsNumber, IsObject, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateKnowledgeBaseDto {
   @IsString()
@@ -11,7 +11,21 @@ export class CreateKnowledgeBaseDto {
 
   @IsOptional()
   @IsString()
+  embeddingModel?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  @IsIn([1, 2])
+  parseType?: number;
+
+  @IsOptional()
+  @IsString()
   chunkMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  pipelineId?: string;
 
   @IsOptional()
   @IsObject()
@@ -21,6 +35,14 @@ export class CreateKnowledgeBaseDto {
   @IsArray()
   @IsString({ each: true })
   roleIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  deptId?: string;
+
+  @IsOptional()
+  @IsString()
+  visibility?: string;
 
   @IsOptional()
   @IsString()
@@ -38,7 +60,21 @@ export class UpdateKnowledgeBaseDto {
 
   @IsOptional()
   @IsString()
+  embeddingModel?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  @IsIn([1, 2])
+  parseType?: number;
+
+  @IsOptional()
+  @IsString()
   chunkMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  pipelineId?: string;
 
   @IsOptional()
   @IsObject()
@@ -48,6 +84,14 @@ export class UpdateKnowledgeBaseDto {
   @IsArray()
   @IsString({ each: true })
   roleIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  deptId?: string;
+
+  @IsOptional()
+  @IsString()
+  visibility?: string;
 
   @IsOptional()
   @IsString()
@@ -74,6 +118,10 @@ export class KnowledgeBaseListDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @IsOptional()
+  @IsString()
+  deptId?: string;
 }
 
 export class DocumentListDto {
@@ -104,6 +152,35 @@ export class DeleteDocumentDto {
   @IsArray()
   @IsString({ each: true })
   ids: string[];
+}
+
+export class UpdateDocumentDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  chunkMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  pipelineId?: string;
+
+  @IsOptional()
+  @IsObject()
+  parserConfig?: Record<string, unknown>;
+}
+
+export class UpdateDocumentStatusDto {
+  @IsArray()
+  @IsString({ each: true })
+  docIds: string[];
+
+  @Type(() => Number)
+  @IsInt()
+  @IsIn([0, 1])
+  status: number;
 }
 
 export class SearchDto {
