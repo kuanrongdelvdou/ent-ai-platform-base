@@ -24,6 +24,7 @@ declare module "@elegant-router/types" {
     "iframe-page": "/iframe-page/:url";
     "knowledge": "/knowledge";
     "knowledge_knowledge-base": "/knowledge/knowledge-base";
+    "knowledge_model-config": "/knowledge/model-config";
     "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?";
     "monitor": "/monitor";
     "monitor_login-log": "/monitor/login-log";
@@ -100,6 +101,7 @@ declare module "@elegant-router/types" {
     | "login"
     | "home"
     | "knowledge_knowledge-base"
+    | "knowledge_model-config"
     | "monitor_login-log"
     | "monitor_operation-log"
     | "system_dept"

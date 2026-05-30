@@ -69,7 +69,7 @@ async function main() {
     },
   });
 
-  // 知识库目录
+  // AI 中枢目录
   const knowledgeMenu = await prisma.menu.create({
     data: {
       parentId: null, type: 1, name: 'knowledge',
@@ -116,9 +116,10 @@ async function main() {
     });
   }
 
-  // 知识库子菜单
+  // AI 中枢子菜单
   const knowledgeChildren = [
     { name: 'knowledge_knowledge-base', path: '/knowledge/knowledge-base', component: 'layout.base$view.knowledge_knowledge-base', icon: 'carbon:folder-details', sort: 1 },
+    { name: 'knowledge_model-config', path: '/knowledge/model-config', component: 'layout.base$view.knowledge_model-config', icon: 'carbon:machine-learning-model', sort: 2 },
   ];
 
   for (const c of knowledgeChildren) {
@@ -160,6 +161,7 @@ async function main() {
   }
 
   const knowledgePage = await prisma.menu.findFirstOrThrow({ where: { name: 'knowledge_knowledge-base' } });
+  const modelConfigPage = await prisma.menu.findFirstOrThrow({ where: { name: 'knowledge_model-config' } });
   await prisma.menu.create({
     data: {
       parentId: knowledgePage.id,
@@ -167,6 +169,19 @@ async function main() {
       name: 'knowledge_search',
       permission: 'knowledge:search',
       sort: 4,
+      status: 1,
+      path: null,
+      component: null,
+      icon: null,
+    },
+  });
+  await prisma.menu.create({
+    data: {
+      parentId: modelConfigPage.id,
+      type: 3,
+      name: 'model_config',
+      permission: 'model:config',
+      sort: 1,
       status: 1,
       path: null,
       component: null,

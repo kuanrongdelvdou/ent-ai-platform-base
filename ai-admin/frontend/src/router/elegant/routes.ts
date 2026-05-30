@@ -80,6 +80,15 @@ export const generatedRoutes: GeneratedRoute[] = [
           title: 'knowledge_knowledge-base',
           i18nKey: 'route.knowledge_knowledge-base'
         }
+      },
+      {
+        name: 'knowledge_model-config',
+        path: '/knowledge/model-config',
+        component: 'view.knowledge_model-config',
+        meta: {
+          title: 'knowledge_model-config',
+          i18nKey: 'route.knowledge_model-config'
+        }
       }
     ]
   },

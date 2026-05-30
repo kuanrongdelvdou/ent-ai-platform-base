@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue';
+import { useRoute } from 'vue-router';
 import { AdminLayout, LAYOUT_SCROLL_EL_ID } from '@sa/materials';
 import type { LayoutMode } from '@sa/materials';
 import { useAppStore } from '@/store/modules/app';
@@ -18,6 +19,7 @@ defineOptions({
 
 const appStore = useAppStore();
 const themeStore = useThemeStore();
+const route = useRoute();
 const { secondLevelMenus, childLevelMenus, isActiveFirstLevelMenuHasChildren } = provideMixMenuContext();
 
 const GlobalMenu = defineAsyncComponent(() => import('../modules/global-menu/index.vue'));
@@ -77,6 +79,8 @@ const isTopHybridSidebarFirst = computed(() => themeStore.layout.mode === 'top-h
 
 const isTopHybridHeaderFirst = computed(() => themeStore.layout.mode === 'top-hybrid-header-first');
 
+const isImmersiveRoute = computed(() => typeof route.name === 'string' && route.name.startsWith('knowledge_'));
+
 const siderWidth = computed(() => getSiderAndCollapsedWidth(false));
 
 const siderCollapsedWidth = computed(() => getSiderAndCollapsedWidth(true));
@@ -124,30 +128,30 @@ function getSiderAndCollapsedWidth(isCollapsed: boolean) {
     :scroll-mode="themeStore.layout.scrollMode"
     :is-mobile="appStore.isMobile"
     :full-content="appStore.fullContent"
-    :fixed-top="themeStore.fixedHeaderAndTab"
-    :header-height="themeStore.header.height"
-    :tab-visible="themeStore.tab.visible"
-    :tab-height="themeStore.tab.height"
+    :fixed-top="!isImmersiveRoute && themeStore.fixedHeaderAndTab"
+    :header-height="isImmersiveRoute ? 0 : themeStore.header.height"
+    :tab-visible="!isImmersiveRoute && themeStore.tab.visible"
+    :tab-height="isImmersiveRoute ? 0 : themeStore.tab.height"
     :content-class="appStore.contentXScrollable ? 'overflow-x-hidden' : ''"
     :sider-visible="siderVisible"
     :sider-width="siderWidth"
     :sider-collapsed-width="siderCollapsedWidth"
-    :footer-visible="themeStore.footer.visible"
+    :footer-visible="!isImmersiveRoute && themeStore.footer.visible"
     :footer-height="themeStore.footer.height"
     :fixed-footer="themeStore.footer.fixed"
     :right-footer="themeStore.footer.right"
   >
     <template #header>
-      <GlobalHeader v-bind="headerProps" />
+      <GlobalHeader v-if="!isImmersiveRoute" v-bind="headerProps" />
     </template>
     <template #tab>
-      <GlobalTab />
+      <GlobalTab v-if="!isImmersiveRoute" />
     </template>
     <template #sider>
       <GlobalSider />
     </template>
     <GlobalMenu />
-    <GlobalContent />
+    <GlobalContent :show-padding="!isImmersiveRoute" />
     <ThemeDrawer />
     <template #footer>
       <GlobalFooter />

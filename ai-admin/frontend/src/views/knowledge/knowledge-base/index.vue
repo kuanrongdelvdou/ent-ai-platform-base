@@ -75,7 +75,8 @@ const parseMethodLabelMap: Record<string, string> = {
   tag: 'Tag',
   picture: 'Picture',
   audio: 'Audio',
-  email: 'Email'
+  email: 'Email',
+  knowledge_graph: 'Knowledge Graph'
 };
 
 const runStateTextMap: Record<string, string> = {

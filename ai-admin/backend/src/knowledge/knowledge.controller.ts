@@ -10,11 +10,11 @@ import {
   Query,
   Res,
   StreamableFile,
-  UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -81,14 +81,14 @@ export class KnowledgeController {
   @OperationLog('知识库', '上传文档')
   @Post('uploadDocument/:kbId')
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file'))
-  uploadDocument(@Param('kbId') kbId: string, @UploadedFile() file: any, @CurrentUser() user: { userId: string }) {
-    if (!file) throw new BadRequestException('缺少文件');
-    return this.knowledgeService.uploadDocument(kbId, {
+  @UseInterceptors(FilesInterceptor('file', 64))
+  uploadDocument(@Param('kbId') kbId: string, @UploadedFiles() files: any[], @CurrentUser() user: { userId: string }) {
+    if (!files?.length) throw new BadRequestException('缺少文件');
+    return this.knowledgeService.uploadDocuments(kbId, files.map((file) => ({
       buffer: file.buffer,
       originalname: file.originalname,
       mimetype: file.mimetype,
-    }, user);
+    })), user);
   }
 
   @Permissions('knowledge:delete')

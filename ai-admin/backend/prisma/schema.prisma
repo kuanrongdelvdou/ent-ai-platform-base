@@ -20,6 +20,7 @@ model Department {
   parent   Department?  @relation("DeptTree", fields: [parentId], references: [id])
   children Department[] @relation("DeptTree")
   users    User[]
+  knowledgeBases KnowledgeBase[]
 
   @@map("departments")
 }
@@ -41,6 +42,7 @@ model User {
   userRoles     UserRole[]
   operationLogs OperationLog[]
   loginLogs     LoginLog[]
+  ownedKnowledgeBases KnowledgeBase[] @relation("KnowledgeBaseOwner")
 
   @@map("users")
 }
@@ -174,16 +176,24 @@ model OperationLog {
 
 // 知识库
 model KnowledgeBase {
-  id          String   @id @default(uuid())
-  name        String
-  description String?
-  datasetId   String?  @map("dataset_id")
-  chunkMethod String?  @map("chunk_method")
-  parserConfig Json?   @map("parser_config")
-  status      Int      @default(1)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(uuid())
+  name             String
+  description      String?
+  datasetId        String?  @map("dataset_id")
+  deptId           String?  @map("dept_id")
+  ownerId          String?  @map("owner_id")
+  visibility       String   @default("dept")
+  embeddingModelId String?  @map("embedding_model_id")
+  parseType        Int?     @map("parse_type")
+  chunkMethod      String?  @map("chunk_method")
+  pipelineId       String?  @map("pipeline_id")
+  parserConfig     Json?   @map("parser_config")
+  status           Int      @default(1)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
+  dept Department? @relation(fields: [deptId], references: [id], onDelete: SetNull)
+  owner User? @relation("KnowledgeBaseOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   knowledgeBaseRoles KnowledgeBaseRole[]
 
   @@map("knowledge_bases")

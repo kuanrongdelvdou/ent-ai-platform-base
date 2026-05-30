@@ -53,9 +53,12 @@ export function fetchGetDocumentList(kbId: string, params?: Api.Knowledge.Docume
   });
 }
 
-export function fetchUploadDocument(kbId: string, file: File) {
+export function fetchUploadDocument(kbId: string, files: File | File[]) {
   const formData = new FormData();
-  formData.append('file', file);
+  const fileList = Array.isArray(files) ? files : [files];
+  fileList.forEach(file => {
+    formData.append('file', file);
+  });
 
   return request<null>({
     url: `/knowledge/uploadDocument/${kbId}`,

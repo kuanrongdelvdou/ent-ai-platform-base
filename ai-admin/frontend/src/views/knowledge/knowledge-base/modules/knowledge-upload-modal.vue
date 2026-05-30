@@ -1,214 +1,357 @@
-<script setup lang="tsx">
-import { ref, watch } from 'vue';
-import type { UploadCustomRequestOptions } from 'naive-ui';
-import { NButton, NPopconfirm, NTag } from 'naive-ui';
-import type { FlatResponseData } from '@sa/axios';
-import {
-  fetchDeleteDocuments,
-  fetchGetDocumentList,
-  fetchParseDocuments,
-  fetchStopParsing,
-  fetchUploadDocument
-} from '@/service/api';
-import { useAppStore } from '@/store/modules/app';
-import { defaultTransform, useNaivePaginatedTable } from '@/hooks/common/table';
-import { $t } from '@/locales';
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import { fetchParseDocuments, fetchUploadDocument } from '@/service/api';
 
 defineOptions({ name: 'KnowledgeUploadModal' });
 
 interface Props {
   knowledgeBase?: Api.Knowledge.KnowledgeBase | null;
+  limitTip?: string;
 }
+
+interface Emits {
+  (e: 'uploaded'): void;
+}
+
+type PendingFile = {
+  id: string;
+  file: File;
+};
 
 const props = defineProps<Props>();
-
+const emit = defineEmits<Emits>();
 const visible = defineModel<boolean>('visible', { default: false });
-const appStore = useAppStore();
-const checkedRowKeys = ref<string[]>([]);
 
-const searchParams = ref<Api.Knowledge.DocumentListParams>({
-  current: 1,
-  size: 10,
-  keywords: null
-});
+const parseOnCreation = ref(false);
+const uploadMode = ref<'file' | 'folder'>('file');
+const uploading = ref(false);
+const dragOver = ref(false);
+const pendingFiles = ref<PendingFile[]>([]);
 
-const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagination } = useNaivePaginatedTable<
-  FlatResponseData<any, Api.Knowledge.DocumentList>,
-  Api.Knowledge.Document
->({
-  api: () =>
-    props.knowledgeBase
-      ? fetchGetDocumentList(props.knowledgeBase.id, searchParams.value)
-      : Promise.resolve({ error: null, data: { records: [], current: 1, size: 10, total: 0 } } as any),
-  transform: response => defaultTransform(response),
-  onPaginationParamsChange: params => {
-    searchParams.value.current = params.page;
-    searchParams.value.size = params.pageSize;
-  },
-  columns: () => [
-    { type: 'selection', align: 'center', width: 48 },
-    { key: 'name', title: '文档名称', minWidth: 220, ellipsis: { tooltip: true } },
-    {
-      key: 'status',
-      title: '状态',
-      width: 110,
-      align: 'center',
-      render: row => <NTag size="small">{row.status || row.run || '-'}</NTag>
-    },
-    {
-      key: 'progress',
-      title: '解析进度',
-      width: 100,
-      align: 'center',
-      render: row => (typeof row.progress === 'number' ? `${Math.round(row.progress * 100)}%` : '-')
-    },
-    { key: 'chunkNum', title: '分块数', width: 90, align: 'center' },
-    { key: 'tokenNum', title: 'Token', width: 100, align: 'center' },
-    {
-      key: 'updateTime',
-      title: '更新时间',
-      width: 180,
-      align: 'center',
-      render: row => row.updateTime?.slice(0, 19).replace('T', ' ') || '-'
-    },
-    {
-      key: 'operate',
-      title: $t('common.operate'),
-      width: 210,
-      align: 'center',
-      render: row => (
-        <div class="flex-center gap-8px">
-          <NButton type="primary" ghost size="small" onClick={() => handleParse([row.id])}>
-            解析
-          </NButton>
-          <NButton type="warning" ghost size="small" onClick={() => handleStop([row.id])}>
-            停止
-          </NButton>
-          <NPopconfirm onPositiveClick={() => handleDelete([row.id])}>
-            {{
-              default: () => $t('common.confirmDelete'),
-              trigger: () => (
-                <NButton type="error" ghost size="small">
-                  删除
-                </NButton>
-              )
-            }}
-          </NPopconfirm>
-        </div>
-      )
+const fileInputRef = ref<HTMLInputElement | null>(null);
+const folderInputRef = ref<HTMLInputElement | null>(null);
+
+const canSave = computed(() => !!props.knowledgeBase && pendingFiles.value.length > 0 && !uploading.value);
+const MAX_BATCH_FILE_COUNT = 32;
+const MAX_BATCH_TOTAL_SIZE = 1024 * 1024 * 1024;
+
+const hintText = computed(
+  () =>
+    props.limitTip ||
+    '支持单次或批量上传。本地部署单次上传总大小上限 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。'
+);
+
+function resetState() {
+  parseOnCreation.value = false;
+  uploadMode.value = 'file';
+  dragOver.value = false;
+  pendingFiles.value = [];
+}
+
+function getFileKey(file: File) {
+  return `${file.name}_${file.size}_${file.lastModified}`;
+}
+
+function addFiles(files: File[]) {
+  const existing = new Set(pendingFiles.value.map(item => getFileKey(item.file)));
+  const newItems = files
+    .filter(file => !existing.has(getFileKey(file)))
+    .map(file => ({
+      id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      file
+    }));
+  pendingFiles.value = [...pendingFiles.value, ...newItems];
+}
+
+function formatSize(size: number) {
+  if (!Number.isFinite(size) || size <= 0) return '0 B';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+function openFilePicker() {
+  uploadMode.value = 'file';
+  fileInputRef.value?.click();
+}
+
+function openFolderPicker() {
+  uploadMode.value = 'folder';
+  folderInputRef.value?.click();
+}
+
+function handleFileChange(event: Event) {
+  const target = event.target as HTMLInputElement;
+  const files = target.files ? Array.from(target.files) : [];
+  addFiles(files);
+  target.value = '';
+}
+
+function removePendingFile(id: string) {
+  pendingFiles.value = pendingFiles.value.filter(item => item.id !== id);
+}
+
+function onDrop(event: DragEvent) {
+  event.preventDefault();
+  dragOver.value = false;
+  const files = Array.from(event.dataTransfer?.files || []);
+  addFiles(files);
+}
+
+function onDragOver(event: DragEvent) {
+  event.preventDefault();
+  dragOver.value = true;
+}
+
+function onDragLeave() {
+  dragOver.value = false;
+}
+
+function collectUploadedDocumentIds(payload: unknown): string[] {
+  if (!payload) return [];
+
+  const source: any[] = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as any)?.docs)
+      ? (payload as any).docs
+      : Array.isArray((payload as any)?.records)
+        ? (payload as any).records
+        : [payload];
+
+  return source
+    .map((item: any) => String(item?.id || item?.document_id || ''))
+    .filter(Boolean);
+}
+
+async function handleSave() {
+  if (!props.knowledgeBase || !pendingFiles.value.length) return;
+  if (pendingFiles.value.length > MAX_BATCH_FILE_COUNT) {
+    window.$message?.warning(`单次最多上传 ${MAX_BATCH_FILE_COUNT} 个文件，请分批上传`);
+    return;
+  }
+
+  const totalSize = pendingFiles.value.reduce((sum, item) => sum + item.file.size, 0);
+  if (totalSize > MAX_BATCH_TOTAL_SIZE) {
+    window.$message?.warning('单次上传总大小不能超过 1GB，请分批上传');
+    return;
+  }
+
+  uploading.value = true;
+  try {
+    const files = pendingFiles.value.map(item => item.file);
+    const { error, data } = await fetchUploadDocument(props.knowledgeBase.id, files);
+    if (error) return;
+
+    const uploadedIds = collectUploadedDocumentIds(data as unknown);
+
+    if (parseOnCreation.value && uploadedIds.length) {
+      const { error } = await fetchParseDocuments(props.knowledgeBase.id, uploadedIds);
+      if (!error) {
+        window.$message?.success('文件上传并已提交解析任务');
+      }
+    } else if (parseOnCreation.value) {
+      window.$message?.warning('文件已上传，但未获取到文档 ID，请在文件列表手动点解析');
+    } else {
+      window.$message?.success('文件上传成功');
     }
-  ]
-});
 
-async function customRequest({ file, onFinish, onError }: UploadCustomRequestOptions) {
-  if (!props.knowledgeBase || !file.file) {
-    onError();
-    return;
-  }
-
-  const { error } = await fetchUploadDocument(props.knowledgeBase.id, file.file);
-  if (error) {
-    onError();
-    return;
-  }
-
-  window.$message?.success('上传成功');
-  onFinish();
-  await getData();
-}
-
-async function handleSearch() {
-  await getDataByPage(1);
-}
-
-async function handleParse(ids: string[]) {
-  if (!props.knowledgeBase || !ids.length) return;
-  const { error } = await fetchParseDocuments(props.knowledgeBase.id, ids);
-  if (!error) {
-    window.$message?.success('已提交解析任务');
-    await getData();
+    resetState();
+    visible.value = false;
+    emit('uploaded');
+  } finally {
+    uploading.value = false;
   }
 }
 
-async function handleStop(ids: string[]) {
-  if (!props.knowledgeBase || !ids.length) return;
-  const { error } = await fetchStopParsing(props.knowledgeBase.id, ids);
-  if (!error) {
-    window.$message?.success('已停止解析任务');
-    await getData();
-  }
+function handleClose() {
+  visible.value = false;
+  resetState();
 }
-
-async function handleDelete(ids: string[]) {
-  if (!props.knowledgeBase || !ids.length) return;
-  const { error } = await fetchDeleteDocuments(props.knowledgeBase.id, ids);
-  if (!error) {
-    checkedRowKeys.value = [];
-    window.$message?.success($t('common.deleteSuccess'));
-    await getData();
-  }
-}
-
-watch(visible, () => {
-  if (visible.value) {
-    checkedRowKeys.value = [];
-    getDataByPage(1);
-  }
-});
 </script>
 
 <template>
-  <NModal
-    v-model:show="visible"
-    preset="card"
-    :title="knowledgeBase ? `文档管理 - ${knowledgeBase.name}` : '文档管理'"
-    class="w-980px max-w-94vw"
-    :bordered="false"
-  >
-    <NSpace vertical :size="16">
-      <NUpload :custom-request="customRequest" multiple :show-file-list="false">
-        <NUploadDragger>
-          <div class="mb-8px text-30px text-primary">
-            <icon-carbon-cloud-upload />
-          </div>
-          <NText>点击或拖拽文件到此处上传</NText>
-        </NUploadDragger>
-      </NUpload>
-
-      <div class="flex items-center justify-between gap-12px">
-        <NInputGroup class="max-w-360px">
-          <NInput v-model:value="searchParams.keywords" clearable placeholder="搜索文档名称" @keyup.enter="handleSearch" />
-          <NButton :loading="loading" @click="handleSearch">
-            <template #icon>
-              <icon-ic-round-search class="text-icon" />
-            </template>
-          </NButton>
-        </NInputGroup>
-        <NSpace>
-          <NButton :disabled="!checkedRowKeys.length" @click="handleParse(checkedRowKeys)">批量解析</NButton>
-          <NButton :disabled="!checkedRowKeys.length" @click="handleStop(checkedRowKeys)">停止解析</NButton>
-          <NPopconfirm :disabled="!checkedRowKeys.length" @positive-click="handleDelete(checkedRowKeys)">
-            <template #trigger>
-              <NButton type="error" ghost :disabled="!checkedRowKeys.length">批量删除</NButton>
-            </template>
-            {{ $t('common.confirmDelete') }}
-          </NPopconfirm>
-        </NSpace>
+  <NModal v-model:show="visible" preset="card" title="上传文件" class="upload-modal" :bordered="false" @close="handleClose">
+    <section class="upload-modal__body">
+      <div class="upload-modal__switch">
+        <span>创建时解析</span>
+        <NSwitch v-model:value="parseOnCreation" />
       </div>
 
-      <NDataTable
-        v-model:checked-row-keys="checkedRowKeys"
-        :columns="columns"
-        :data="data"
-        size="small"
-        :flex-height="!appStore.isMobile"
-        :scroll-x="960"
-        :loading="loading"
-        remote
-        :row-key="row => row.id"
-        :pagination="mobilePagination"
-        class="h-420px"
-      />
-    </NSpace>
+      <div class="upload-modal__mode">
+        <NButton :type="uploadMode === 'file' ? 'default' : 'tertiary'" @click="openFilePicker">
+          <template #icon>
+            <icon-ic-outline-insert-drive-file />
+          </template>
+          文件
+        </NButton>
+        <NButton :type="uploadMode === 'folder' ? 'default' : 'tertiary'" @click="openFolderPicker">
+          <template #icon>
+            <icon-ic-outline-drive-folder-upload />
+          </template>
+          文件夹
+        </NButton>
+      </div>
+
+      <div
+        class="upload-modal__drop"
+        :class="{ 'upload-modal__drop--active': dragOver }"
+        @drop="onDrop"
+        @dragover="onDragOver"
+        @dragleave="onDragLeave"
+      >
+        <div class="upload-modal__drop-icon">
+          <icon-carbon-cloud-upload />
+        </div>
+        <p class="upload-modal__drop-title">点击或拖拽文件至此区域即可上传</p>
+        <p class="upload-modal__drop-tip">{{ hintText }}</p>
+      </div>
+
+      <ul v-if="pendingFiles.length" class="upload-modal__file-list">
+        <li v-for="item in pendingFiles" :key="item.id" class="upload-modal__file-item">
+          <div class="upload-modal__file-main">
+            <span class="upload-modal__file-name">{{ item.file.name }}</span>
+            <span class="upload-modal__file-size">{{ formatSize(item.file.size) }}</span>
+          </div>
+          <NButton text type="error" @click="removePendingFile(item.id)">
+            <template #icon>
+              <icon-material-symbols-delete-outline-rounded />
+            </template>
+          </NButton>
+        </li>
+      </ul>
+    </section>
+
+    <template #footer>
+      <NSpace justify="end">
+        <NButton @click="handleClose">取消</NButton>
+        <NButton type="primary" :loading="uploading" :disabled="!canSave" @click="handleSave">保存</NButton>
+      </NSpace>
+    </template>
   </NModal>
+
+  <input ref="fileInputRef" type="file" multiple class="upload-modal__hidden-input" @change="handleFileChange" />
+  <input
+    ref="folderInputRef"
+    type="file"
+    multiple
+    webkitdirectory
+    directory
+    class="upload-modal__hidden-input"
+    @change="handleFileChange"
+  />
 </template>
+
+<style scoped>
+.upload-modal {
+  width: 760px;
+  max-width: 94vw;
+}
+
+.upload-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.upload-modal__switch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.upload-modal__mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 4px;
+  background: #f5f6f8;
+  border-radius: 10px;
+}
+
+.upload-modal__drop {
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  border: 1px dashed #d1d5db;
+  border-radius: 10px;
+  background: #fafbfc;
+  text-align: center;
+  transition: border-color 0.2s ease;
+}
+
+.upload-modal__drop--active {
+  border-color: #18c8c6;
+}
+
+.upload-modal__drop-icon {
+  color: #6b7280;
+  font-size: 42px;
+}
+
+.upload-modal__drop-title {
+  margin: 0;
+  color: #4b5563;
+  font-size: 16px;
+}
+
+.upload-modal__drop-tip {
+  max-width: 560px;
+  margin: 0;
+  color: #9ca3af;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.upload-modal__file-list {
+  max-height: 200px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.upload-modal__file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #eceef1;
+  border-radius: 8px;
+}
+
+.upload-modal__file-item + .upload-modal__file-item {
+  margin-top: 8px;
+}
+
+.upload-modal__file-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.upload-modal__file-name {
+  overflow: hidden;
+  color: #111827;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.upload-modal__file-size {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.upload-modal__hidden-input {
+  display: none;
+}
+</style>

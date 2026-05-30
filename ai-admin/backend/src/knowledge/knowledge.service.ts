@@ -230,15 +230,24 @@ export class KnowledgeService {
     const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
     const result = await this.ragflow.listDocuments(kb.datasetId!, dto);
     if (!result.success) throw new BadRequestException(`获取文档列表失败：${result.error}`);
-    return this.normalizeRagflowList(result.data);
+    return this.normalizeRagflowList(result.data, kb.chunkMethod ?? 'naive');
   }
 
-  async uploadDocument(kbId: string, file: { buffer: Buffer; originalname: string; mimetype: string }, user: CurrentUserRef) {
+  async uploadDocuments(
+    kbId: string,
+    files: Array<{ buffer: Buffer; originalname: string; mimetype: string }>,
+    user: CurrentUserRef,
+  ) {
     const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
-    const result = await this.ragflow.uploadDocument(kb.datasetId!, file);
+    const result = await this.ragflow.uploadDocuments(kb.datasetId!, files);
     if (!result.success) throw new BadRequestException(`上传文档失败：${result.error}`);
     await this.prisma.knowledgeBase.update({ where: { id: kbId }, data: { status: 1 } });
-    this.log.info('上传文档成功', { kbId, filename: file.originalname, userId: user.userId });
+    this.log.info('上传文档成功', {
+      kbId,
+      fileCount: files.length,
+      filenames: files.map((item) => item.originalname),
+      userId: user.userId,
+    });
     return result.data;
   }
 
@@ -310,13 +319,71 @@ export class KnowledgeService {
     return result.data;
   }
 
-  private normalizeRagflowList(data: unknown) {
-    if (Array.isArray(data)) return { records: data, total: data.length };
+  private normalizeRagflowList(data: unknown, fallbackChunkMethod: string) {
+    const normalizeItems = (items: unknown[]) => items.map((item) => this.normalizeRagflowDocument(item, fallbackChunkMethod));
+
+    if (Array.isArray(data)) {
+      return { records: normalizeItems(data), total: data.length };
+    }
+
     if (data && typeof data === 'object') {
       const payload = data as Record<string, any>;
-      const records = payload.docs ?? payload.documents ?? payload.records ?? payload.items ?? [];
-      return { ...payload, records, total: payload.total ?? records.length };
+      const rawRecords = payload.docs ?? payload.documents ?? payload.records ?? payload.items ?? [];
+      const records = Array.isArray(rawRecords) ? normalizeItems(rawRecords) : [];
+      return {
+        current: payload.current ?? payload.page ?? 1,
+        size: payload.size ?? payload.page_size ?? records.length,
+        records,
+        total: payload.total ?? payload.total_count ?? records.length,
+      };
     }
-    return { records: [], total: 0 };
+
+    return { current: 1, size: 10, records: [], total: 0 };
+  }
+
+  private normalizeRagflowDocument(input: unknown, fallbackChunkMethod: string) {
+    const item = (input ?? {}) as Record<string, unknown>;
+    const rawRun = String(item.run ?? item.run_status ?? 'UNSTART').toUpperCase();
+    const runMap: Record<string, string> = {
+      '0': 'UNSTART',
+      '1': 'RUNNING',
+      '2': 'CANCEL',
+      '3': 'DONE',
+      '4': 'FAIL',
+      '5': 'SCHEDULE',
+    };
+
+    const run = runMap[rawRun] ?? rawRun;
+    const chunkMethod = String(
+      item.chunk_method ?? item.chunkMethod ?? item.parser_id ?? fallbackChunkMethod ?? 'naive',
+    ).toLowerCase();
+
+    const pipelineId = String(item.pipeline_id ?? item.pipelineId ?? '').trim() || null;
+    const pipelineName = String(item.pipeline_name ?? item.pipelineName ?? '').trim() || null;
+
+    return {
+      id: String(item.id ?? ''),
+      name: String(item.name ?? '-'),
+      datasetId: String(item.dataset_id ?? item.datasetId ?? ''),
+      type: item.type ?? null,
+      size: Number(item.size ?? 0),
+      chunkNum: Number(item.chunk_count ?? item.chunk_num ?? item.chunkNum ?? 0),
+      tokenNum: Number(item.token_count ?? item.token_num ?? item.tokenNum ?? 0),
+      progress: Number(item.progress ?? 0),
+      run,
+      status: String(item.status ?? '1'),
+      chunkMethod,
+      parseMethod: chunkMethod,
+      pipelineId,
+      pipelineName,
+      parserConfig: (item.parser_config ?? item.parserConfig ?? null) as Record<string, unknown> | null,
+      metaFields: (item.meta_fields ?? item.metaFields ?? {}) as Record<string, unknown>,
+      createTime: String(item.create_time ?? item.created_at ?? item.createTime ?? ''),
+      updateTime: String(item.update_time ?? item.updated_at ?? item.updateTime ?? ''),
+      chunk_method: chunkMethod,
+      pipeline_id: pipelineId,
+      pipeline_name: pipelineName,
+      meta_fields: (item.meta_fields ?? item.metaFields ?? {}) as Record<string, unknown>,
+    };
   }
 }

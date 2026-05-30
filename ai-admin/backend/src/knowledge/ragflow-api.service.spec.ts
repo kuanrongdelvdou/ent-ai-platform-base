@@ -33,4 +33,29 @@ describe('RagflowApiService', () => {
       }),
     );
   });
+
+  it('uploads multiple files in one request', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      json: jest.fn().mockResolvedValue({ code: 0, data: [{ id: 'doc-1' }, { id: 'doc-2' }] }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const service = new RagflowApiService(config as any);
+    const result = await service.uploadDocuments('dataset-1', [
+      { buffer: Buffer.from('a'), originalname: 'a.txt', mimetype: 'text/plain' },
+      { buffer: Buffer.from('b'), originalname: 'b.txt', mimetype: 'text/plain' },
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://ragflow.local/api/v1/datasets/dataset-1/documents',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer test-token' }),
+      }),
+    );
+
+    const body = fetchMock.mock.calls[0][1].body as FormData;
+    expect(body.getAll('file')).toHaveLength(2);
+  });
 });

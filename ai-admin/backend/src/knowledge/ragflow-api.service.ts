@@ -137,15 +137,28 @@ export class RagflowApiService {
     return this.request<Record<string, unknown>>(`/datasets/${datasetId}/documents`, { params });
   }
 
-  async uploadDocument(datasetId: string, file: { buffer: Buffer; originalname: string; mimetype: string }) {
+  async uploadDocuments(
+    datasetId: string,
+    files: Array<{ buffer: Buffer; originalname: string; mimetype: string }>,
+  ) {
     const url = `${this.baseUrl}/api/v1/datasets/${datasetId}/documents`;
     const formData = new FormData();
-    formData.append('file', new Blob([new Uint8Array(file.buffer)], { type: file.mimetype }), file.originalname);
+    files.forEach((file) => {
+      formData.append(
+        'file',
+        new Blob([new Uint8Array(file.buffer)], { type: file.mimetype }),
+        file.originalname,
+      );
+    });
 
     const headers: Record<string, string> = {};
     if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
 
-    this.log.info('上传文档到 RAGFlow', { datasetId, filename: file.originalname });
+    this.log.info('上传文档到 RAGFlow', {
+      datasetId,
+      fileCount: files.length,
+      filenames: files.map((item) => item.originalname),
+    });
 
     try {
       const response = await fetch(url, { method: 'POST', headers, body: formData });
@@ -157,6 +170,10 @@ export class RagflowApiService {
       this.log.error('RAGFlow 文档上传失败', error);
       return { success: false, error: message };
     }
+  }
+
+  async uploadDocument(datasetId: string, file: { buffer: Buffer; originalname: string; mimetype: string }) {
+    return this.uploadDocuments(datasetId, [file]);
   }
 
   async deleteDocuments(datasetId: string, ids: string[]) {
