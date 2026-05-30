@@ -2,11 +2,26 @@
 import { computed, h, onMounted, ref } from 'vue';
 import type { DataTableColumns, DropdownOption } from 'naive-ui';
 import { NButton, NDropdown, NPopconfirm, NProgress, NSwitch } from 'naive-ui';
-import { fetchDeleteDocuments, fetchDeleteKnowledgeBase, fetchDownloadDocument, fetchGetAiHubReadiness, fetchGetDocumentList, fetchGetKnowledgeBaseList, fetchParseDocuments, fetchStopParsing, fetchUpdateDocument, fetchUpdateDocumentStatus, fetchUpdateKnowledgeBase } from '@/service/api';
+import {
+  fetchCreateEmptyDocument,
+  fetchDeleteDocuments,
+  fetchDeleteKnowledgeBase,
+  fetchDownloadDocument,
+  fetchGetAiHubReadiness,
+  fetchGetDocumentList,
+  fetchGetKnowledgeBaseList,
+  fetchParseDocuments,
+  fetchStopParsing,
+  fetchUpdateDocument,
+  fetchUpdateDocumentStatus,
+  fetchUpdateKnowledgeBase
+} from '@/service/api';
 import { useAuth } from '@/hooks/business/auth';
-import { $t } from '@/locales';
 import SvgIcon from '@/components/custom/svg-icon.vue';
+import KnowledgeConfigPanel from './modules/knowledge-config-panel.vue';
+import KnowledgeLogPanel from './modules/knowledge-log-panel.vue';
 import KnowledgeOperateModal from './modules/knowledge-operate-modal.vue';
+import KnowledgeSearchPanel from './modules/knowledge-search-panel.vue';
 import KnowledgeUploadModal from './modules/knowledge-upload-modal.vue';
 
 type DetailTab = 'file' | 'search' | 'log' | 'config';
@@ -37,6 +52,9 @@ const checkedDocIds = ref<string[]>([]);
 
 const createVisible = ref(false);
 const uploadVisible = ref(false);
+const emptyVisible = ref(false);
+const emptyName = ref('');
+const emptyLoading = ref(false);
 
 const renameVisible = ref(false);
 const renameValue = ref('');
@@ -93,8 +111,13 @@ const parseMethodOptions: DropdownOption[] = Object.entries(parseMethodLabelMap)
   label
 }));
 
+const addFileOptions: DropdownOption[] = [
+  { key: 'upload', label: '上传文件' },
+  { key: 'empty', label: '新增空白文件' }
+];
+
 const uploadLimitTip =
-  '支持单次或批量上传。本地部署单次上传总大小上限 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。';
+  '支持单次或批量上传。本地部署单次上传总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限制文件数量。';
 
 const canCreateKnowledgeBase = computed(
   () => hasAuth('knowledge:add') && aiReadiness.value?.status === 'READY'
@@ -303,7 +326,6 @@ function getCardMenuOptions() {
 
 function getDocumentCount(kb: Api.Knowledge.KnowledgeBase) {
   const docCount = (kb as any).documentCount ?? (kb as any).document_count ?? (kb as any).docNum ?? (kb as any).doc_num;
-
   return typeof docCount === 'number' ? docCount : 0;
 }
 
@@ -475,10 +497,7 @@ async function loadDocuments(resetPage = false) {
 }
 
 async function handleCreateKnowledgeBase() {
-  if (!hasAuth('knowledge:add')) {
-    window.$message?.warning('当前账号没有创建知识库权限');
-    return;
-  }
+  if (!hasAuth('knowledge:add')) return;
 
   if (!aiReadiness.value) {
     await loadAiReadiness();
@@ -517,22 +536,16 @@ async function handleCardMenuSelect(key: string, item: Api.Knowledge.KnowledgeBa
     renameVisible.value = true;
     return;
   }
-
   if (key === 'delete') {
     await handleDeleteKnowledgeBase(item);
   }
 }
 
 async function handleDeleteKnowledgeBase(item: Api.Knowledge.KnowledgeBase) {
-  if (!hasAuth('knowledge:delete')) {
-    window.$message?.warning('当前账号没有删除知识库权限');
-    return;
-  }
-
+  if (!hasAuth('knowledge:delete')) return;
   const { error } = await fetchDeleteKnowledgeBase(item.id);
   if (error) return;
-
-  window.$message?.success($t('common.deleteSuccess'));
+  window.$message?.success('删除成功');
   if (activeKnowledgeBase.value?.id === item.id) {
     activeKnowledgeBase.value = null;
   }
@@ -543,19 +556,13 @@ async function handleSubmitRename() {
   const kb = renamingKnowledgeBase.value;
   const nextName = renameValue.value.trim();
 
-  if (!kb || !nextName) {
-    window.$message?.warning('请输入知识库名称');
-    return;
-  }
+  if (!kb || !nextName) return;
 
   renamingLoading.value = true;
   try {
     const { error } = await fetchUpdateKnowledgeBase(kb.id, { name: nextName });
     if (error) return;
-
-    window.$message?.success('重命名成功');
     renameVisible.value = false;
-
     if (activeKnowledgeBase.value?.id === kb.id) {
       activeKnowledgeBase.value = { ...activeKnowledgeBase.value, name: nextName };
     }
@@ -569,7 +576,6 @@ async function handleParseDocuments(ids: string[]) {
   if (!activeKnowledgeBase.value || !ids.length) return;
   const { error } = await fetchParseDocuments(activeKnowledgeBase.value.id, ids);
   if (error) return;
-  window.$message?.success('已提交解析任务');
   await loadDocuments();
 }
 
@@ -577,7 +583,6 @@ async function handleStopDocuments(ids: string[]) {
   if (!activeKnowledgeBase.value || !ids.length) return;
   const { error } = await fetchStopParsing(activeKnowledgeBase.value.id, ids);
   if (error) return;
-  window.$message?.success('已停止解析任务');
   await loadDocuments();
 }
 
@@ -596,7 +601,6 @@ async function handleChangeDocumentParseMethod(row: Api.Knowledge.Document, meth
 
   const { error } = await fetchUpdateDocument(activeKnowledgeBase.value.id, row.id, { chunkMethod: nextMethod });
   if (error) return;
-  window.$message?.success('解析方式已更新');
   await loadDocuments();
 }
 
@@ -609,17 +613,13 @@ function handleOpenRenameDocument(row: Api.Knowledge.Document) {
 async function handleSubmitRenameDocument() {
   const record = renamingDocument.value;
   const nextName = renameDocumentValue.value.trim();
-  if (!activeKnowledgeBase.value || !record || !nextName) {
-    window.$message?.warning('请输入文件名称');
-    return;
-  }
+  if (!activeKnowledgeBase.value || !record || !nextName) return;
 
   renamingDocumentLoading.value = true;
   try {
     const { error } = await fetchUpdateDocument(activeKnowledgeBase.value.id, record.id, { name: nextName });
     if (error) return;
     renameDocumentVisible.value = false;
-    window.$message?.success('重命名成功');
     await loadDocuments();
   } finally {
     renamingDocumentLoading.value = false;
@@ -663,23 +663,40 @@ async function handleDeleteDocuments(ids: string[]) {
   const { error } = await fetchDeleteDocuments(activeKnowledgeBase.value.id, ids);
   if (error) return;
   checkedDocIds.value = [];
-  window.$message?.success('删除成功');
   await Promise.all([loadDocuments(), loadKnowledgeBaseList()]);
 }
 
 function handleDetailTabChange(tab: DetailTab) {
   activeDetailTab.value = tab;
-  if (tab !== 'file') {
-    window.$message?.info('该能力按官方顺序后续接入');
-  }
 }
 
-function handleCreateFile() {
-  if (!hasAuth('knowledge:add')) {
-    window.$message?.warning('当前账号没有新增文件权限');
+function handleCreateFileAction(key: string | number) {
+  if (!hasAuth('knowledge:add')) return;
+  if (String(key) === 'upload') {
+    uploadVisible.value = true;
     return;
   }
-  uploadVisible.value = true;
+  emptyName.value = '';
+  emptyVisible.value = true;
+}
+
+async function handleSubmitEmptyDocument() {
+  if (!activeKnowledgeBase.value) return;
+  const name = emptyName.value.trim();
+  if (!name) {
+    window.$message?.warning('请输入文件名称');
+    return;
+  }
+  emptyLoading.value = true;
+  try {
+    const { error } = await fetchCreateEmptyDocument(activeKnowledgeBase.value.id, name);
+    if (error) return;
+    emptyVisible.value = false;
+    emptyName.value = '';
+    await Promise.all([loadDocuments(true), loadKnowledgeBaseList()]);
+  } finally {
+    emptyLoading.value = false;
+  }
 }
 
 function handleCreateSubmitted() {
@@ -702,15 +719,9 @@ onMounted(async () => {
   <div class="knowledge-page">
     <template v-if="!activeKnowledgeBase">
       <section class="knowledge-page__list-header">
-        <div>
-          <h2 class="knowledge-page__title">知识库</h2>
-        </div>
+        <h2 class="knowledge-page__title">知识库</h2>
         <div class="knowledge-page__list-actions">
-          <NDropdown
-            trigger="click"
-            :options="statusOptions"
-            @select="handleStatusSelect"
-          >
+          <NDropdown trigger="click" :options="statusOptions" @select="handleStatusSelect">
             <NButton quaternary square>
               <template #icon>
                 <icon-mdi-filter-outline />
@@ -772,7 +783,6 @@ onMounted(async () => {
             </div>
           </article>
         </section>
-
         <section v-else class="knowledge-page__empty">
           <NEmpty description="尚未创建知识库" />
         </section>
@@ -844,12 +854,14 @@ onMounted(async () => {
                     <icon-ic-round-search class="text-icon" />
                   </template>
                 </NInput>
-                <NButton type="primary" @click="handleCreateFile">
-                  <template #icon>
-                    <icon-ic-round-plus class="text-icon" />
-                  </template>
-                  新增文件
-                </NButton>
+                <NDropdown trigger="click" :options="addFileOptions" @select="handleCreateFileAction">
+                  <NButton type="primary">
+                    <template #icon>
+                      <icon-ic-round-plus class="text-icon" />
+                    </template>
+                    新增文件
+                  </NButton>
+                </NDropdown>
               </div>
             </header>
 
@@ -889,9 +901,19 @@ onMounted(async () => {
             </footer>
           </template>
 
-          <section v-else class="knowledge-detail__placeholder">
-            <NText depth="3">该模块按官方顺序后续接入。</NText>
-          </section>
+          <KnowledgeSearchPanel
+            v-else-if="activeDetailTab === 'search'"
+            :knowledge-base="activeKnowledgeBase"
+            :documents="docs"
+          />
+          <KnowledgeLogPanel
+            v-else-if="activeDetailTab === 'log'"
+            :knowledge-base="activeKnowledgeBase"
+          />
+          <KnowledgeConfigPanel
+            v-else
+            :knowledge-base="activeKnowledgeBase"
+          />
         </main>
       </section>
     </template>
@@ -908,6 +930,26 @@ onMounted(async () => {
       :limit-tip="uploadLimitTip"
       @uploaded="handleUploadSubmitted"
     />
+
+    <NModal
+      v-model:show="emptyVisible"
+      preset="card"
+      title="新增空白文件"
+      class="w-520px max-w-92vw"
+      :bordered="false"
+    >
+      <NForm label-placement="top">
+        <NFormItem label="文件名称">
+          <NInput v-model:value="emptyName" placeholder="请输入文件名称，如：政策解读.md" maxlength="255" />
+        </NFormItem>
+      </NForm>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton @click="emptyVisible = false">取消</NButton>
+          <NButton type="primary" :loading="emptyLoading" @click="handleSubmitEmptyDocument">确认</NButton>
+        </NSpace>
+      </template>
+    </NModal>
 
     <NModal v-model:show="renameVisible" preset="card" title="重命名" class="w-540px max-w-90vw" :bordered="false">
       <NForm label-placement="top">
@@ -966,7 +1008,6 @@ onMounted(async () => {
   font-size: 22px;
   font-weight: 700;
   line-height: 1.1;
-  letter-spacing: 0;
 }
 
 .knowledge-page__list-actions {
@@ -981,18 +1022,18 @@ onMounted(async () => {
 
 .knowledge-page__card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
 }
 
 .knowledge-card {
-  min-height: 164px;
+  min-height: 148px;
   display: grid;
   grid-template-columns: 56px minmax(0, 1fr);
-  gap: 16px;
-  padding: 18px 20px;
+  gap: 14px;
+  padding: 16px 18px;
   border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border-radius: 10px;
   background: #fff;
   cursor: pointer;
   transition: border-color 0.2s ease;
@@ -1068,10 +1109,10 @@ onMounted(async () => {
 }
 
 .knowledge-detail {
-  min-height: calc(100vh - 130px);
+  min-height: calc(100vh - 132px);
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
-  gap: 16px;
+  gap: 14px;
 }
 
 .knowledge-detail__sidebar {
@@ -1119,18 +1160,20 @@ onMounted(async () => {
 .knowledge-detail__kb-meta {
   margin: 0;
   color: #6b7280;
-  font-size: 14px;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .knowledge-detail__tabs {
+  margin-top: 10px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .knowledge-detail__tab {
-  min-height: 42px;
+  width: 100%;
+  height: 40px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1139,22 +1182,26 @@ onMounted(async () => {
   border-radius: 8px;
   color: #4b5563;
   background: transparent;
+  font-size: 15px;
   text-align: left;
   cursor: pointer;
 }
 
-.knowledge-detail__tab:hover,
+.knowledge-detail__tab:hover {
+  background: #f3f4f6;
+}
+
 .knowledge-detail__tab--active {
   color: #111827;
   background: #f3f4f6;
+  font-weight: 600;
 }
 
 .knowledge-detail__main {
   min-width: 0;
-  border: 1px solid #eceef1;
-  border-radius: 12px;
-  padding: 14px 14px 12px;
-  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .knowledge-detail__toolbar {
@@ -1162,13 +1209,13 @@ onMounted(async () => {
   align-items: flex-end;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
 }
 
 .knowledge-detail__main-title {
   margin: 0;
-  font-size: 32px;
+  font-size: 16px;
   font-weight: 700;
+  line-height: 1.2;
 }
 
 .knowledge-detail__main-desc {
@@ -1180,123 +1227,79 @@ onMounted(async () => {
 .knowledge-detail__toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .knowledge-detail__search {
-  width: 162px;
+  width: 180px;
 }
 
 .knowledge-detail__batch-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
 }
 
 .knowledge-detail__table {
-  min-height: 440px;
-}
-
-.knowledge-detail__placeholder {
   min-height: 360px;
-  display: grid;
-  place-items: center;
 }
 
-.doc-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+:deep(.doc-parser-btn) {
+  color: #6b7280;
 }
 
-.doc-parser-btn {
-  text-transform: none;
-}
-
-.doc-run-cell {
-  min-height: 28px;
-  display: inline-flex;
+:deep(.doc-run-cell) {
+  min-height: 26px;
+  display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.doc-run-progress {
-  min-width: 72px;
+:deep(.doc-run-progress) {
+  width: 74px;
+  padding: 0;
 }
 
-.doc-run-text {
+:deep(.doc-run-action) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #18b9b8;
+  padding: 0;
+}
+
+:deep(.doc-run-action--running),
+:deep(.doc-run-action--schedule) {
+  color: #ef4444;
+}
+
+:deep(.doc-run-text) {
   color: #6b7280;
   font-size: 12px;
 }
 
-.doc-run-action {
-  padding: 0 2px;
-  font-size: 16px;
+:deep(.doc-actions) {
+  display: inline-flex;
+  gap: 4px;
 }
 
-.doc-run-action--unstart {
-  color: #10b981;
-}
-
-.doc-run-action--done,
-.doc-run-action--cancel,
-.doc-run-action--fail {
-  color: #14b8a6;
-}
-
-.doc-run-action--running,
-.doc-run-action--schedule {
-  color: #ef4444;
-}
-
-@media (max-width: 1200px) {
-  .knowledge-detail {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .knowledge-detail__sidebar {
-    border-bottom: 1px solid #eceef1;
-    padding-bottom: 14px;
-  }
-
-  .knowledge-detail__tabs {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 768px) {
+@media (max-width: 1280px) {
   .knowledge-page {
     padding: 12px;
   }
 
-  .knowledge-page__list-header {
-    align-items: stretch;
-    flex-direction: column;
+  .knowledge-detail {
+    grid-template-columns: 1fr;
   }
 
-  .knowledge-page__list-actions {
-    flex-wrap: wrap;
+  .knowledge-detail__sidebar {
+    padding: 0;
   }
 
-  .knowledge-page__search,
-  .knowledge-detail__search {
-    width: 100%;
-  }
-
-  .knowledge-page__card-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .knowledge-detail__toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .knowledge-detail__toolbar-actions {
-    width: 100%;
-    flex-wrap: wrap;
+  .knowledge-detail__tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
   }
 }
 </style>

@@ -1,5 +1,5 @@
-import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateKnowledgeBaseDto {
   @IsString()
@@ -154,6 +154,11 @@ export class DeleteDocumentDto {
   ids: string[];
 }
 
+export class CreateEmptyDocumentDto {
+  @IsString()
+  name: string;
+}
+
 export class UpdateDocumentDto {
   @IsOptional()
   @IsString()
@@ -188,18 +193,121 @@ export class SearchDto {
   question: string;
 
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  doc_ids?: string[] = [];
+
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Type(() => Number)
-  top_k?: number = 10;
+  page?: number = 1;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  size?: number = 30;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  top_k?: number = 1024;
 
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
-  similarity_threshold?: number = 0.2;
+  similarity_threshold?: number = 0;
 
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
   vector_similarity_weight?: number = 0.3;
+
+  @IsOptional()
+  @IsBoolean()
+  use_kg?: boolean = false;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  cross_languages?: string[] = [];
+
+  @IsOptional()
+  @IsBoolean()
+  keyword?: boolean = false;
+
+  @IsOptional()
+  @IsString()
+  search_id?: string;
+
+  @IsOptional()
+  @IsString()
+  rerank_id?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  tenant_rerank_id?: number;
+
+  @IsOptional()
+  @IsObject()
+  meta_data_filter?: Record<string, unknown>;
+}
+
+export class IngestionLogsDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  page?: number = 1;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  page_size?: number = 20;
+
+  @IsOptional()
+  @IsString()
+  orderby?: string = 'create_time';
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return true;
+    if (typeof value === 'boolean') return value;
+    return String(value).toLowerCase() !== 'false';
+  })
+  @IsBoolean()
+  desc?: boolean = true;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return [];
+    if (Array.isArray(value)) return value;
+    return String(value)
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean);
+  })
+  @IsArray()
+  @IsString({ each: true })
+  operation_status?: string[] = [];
+
+  @IsOptional()
+  @IsString()
+  create_date_from?: string;
+
+  @IsOptional()
+  @IsString()
+  create_date_to?: string;
+
+  @IsOptional()
+  @IsIn(['dataset', 'file'])
+  log_type?: 'dataset' | 'file' = 'file';
+
+  @IsOptional()
+  @IsString()
+  keywords?: string;
 }

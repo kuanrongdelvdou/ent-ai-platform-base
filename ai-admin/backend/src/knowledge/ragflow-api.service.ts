@@ -5,7 +5,7 @@ import { AppLoggerService } from '../common/logger/app-logger.service';
 type RequestOptions = {
   method?: string;
   body?: unknown;
-  params?: Record<string, string | number | boolean | undefined | null>;
+  params?: Record<string, string | number | boolean | Array<string | number | boolean> | undefined | null>;
   prefix?: '/api/v1' | '/v1';
 };
 
@@ -42,9 +42,14 @@ export class RagflowApiService {
     if (params) {
       const searchParams = new URLSearchParams();
       for (const [key, value] of Object.entries(params)) {
-        if (value !== undefined && value !== null && value !== '') {
-          searchParams.set(key, String(value));
+        if (value === undefined || value === null || value === '') continue;
+        if (Array.isArray(value)) {
+          value
+            .filter(item => item !== undefined && item !== null && String(item) !== '')
+            .forEach(item => searchParams.append(key, String(item)));
+          continue;
         }
+        searchParams.set(key, String(value));
       }
       const queryString = searchParams.toString();
       if (queryString) url += `?${queryString}`;
@@ -176,6 +181,14 @@ export class RagflowApiService {
     return this.uploadDocuments(datasetId, [file]);
   }
 
+  async createEmptyDocument(datasetId: string, name: string) {
+    return this.request<Record<string, unknown>>(`/datasets/${datasetId}/documents`, {
+      method: 'POST',
+      params: { type: 'empty' },
+      body: { name },
+    });
+  }
+
   async deleteDocuments(datasetId: string, ids: string[]) {
     return this.request(`/datasets/${datasetId}/documents`, { method: 'DELETE', body: { ids } });
   }
@@ -246,20 +259,77 @@ export class RagflowApiService {
     datasetId: string,
     data: {
       question: string;
+      doc_ids?: string[];
+      page?: number;
+      size?: number;
       top_k?: number;
       similarity_threshold?: number;
       vector_similarity_weight?: number;
+      use_kg?: boolean;
+      cross_languages?: string[];
+      keyword?: boolean;
+      search_id?: string;
+      rerank_id?: string;
+      tenant_rerank_id?: number;
+      meta_data_filter?: Record<string, unknown>;
     },
   ) {
     return this.request<Record<string, unknown>>(`/datasets/${datasetId}/search`, {
       method: 'POST',
       body: {
-        question: data.question,
-        top_k: data.top_k ?? 10,
-        similarity_threshold: data.similarity_threshold ?? 0.2,
+        question: data.question.trim(),
+        doc_ids: data.doc_ids ?? [],
+        page: data.page ?? 1,
+        size: data.size ?? 30,
+        top_k: data.top_k ?? 1024,
+        similarity_threshold: data.similarity_threshold ?? 0,
         vector_similarity_weight: data.vector_similarity_weight ?? 0.3,
-        keyword: false,
+        use_kg: data.use_kg ?? false,
+        cross_languages: data.cross_languages ?? [],
+        keyword: data.keyword ?? false,
+        search_id: data.search_id ?? null,
+        rerank_id: data.rerank_id ?? null,
+        tenant_rerank_id: data.tenant_rerank_id ?? null,
+        meta_data_filter: data.meta_data_filter ?? null,
       },
     });
+  }
+
+  async getIngestionSummary(datasetId: string) {
+    return this.request<Record<string, unknown>>(`/datasets/${datasetId}/ingestions/summary`);
+  }
+
+  async getIngestionLogs(
+    datasetId: string,
+    params: {
+      page?: number;
+      page_size?: number;
+      orderby?: string;
+      desc?: boolean;
+      operation_status?: string[];
+      create_date_from?: string;
+      create_date_to?: string;
+      log_type?: 'dataset' | 'file';
+      keywords?: string;
+    },
+  ) {
+    const nextParams: Record<string, string | number | boolean | string[] | undefined> = {
+      page: params.page,
+      page_size: params.page_size,
+      orderby: params.orderby,
+      desc: params.desc,
+      create_date_from: params.create_date_from,
+      create_date_to: params.create_date_to,
+      log_type: params.log_type,
+      keywords: params.keywords,
+      operation_status: params.operation_status,
+    };
+    return this.request<Record<string, unknown>>(`/datasets/${datasetId}/ingestions`, {
+      params: nextParams,
+    });
+  }
+
+  async getIngestionLog(datasetId: string, logId: string) {
+    return this.request<Record<string, unknown>>(`/datasets/${datasetId}/ingestions/${logId}`);
   }
 }

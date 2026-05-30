@@ -144,5 +144,67 @@ declare namespace Api {
       score?: number;
       [key: string]: any;
     };
+
+    type SearchForm = {
+      question: string;
+      doc_ids?: string[];
+      page?: number;
+      size?: number;
+      top_k?: number;
+      similarity_threshold?: number;
+      vector_similarity_weight?: number;
+      use_kg?: boolean;
+      cross_languages?: string[];
+      keyword?: boolean;
+      search_id?: string;
+      rerank_id?: string;
+      tenant_rerank_id?: number;
+      meta_data_filter?: Record<string, any> | null;
+    };
+
+    type IngestionSummary = {
+      doc_num?: number;
+      chunk_num?: number;
+      token_num?: number;
+      status?: Record<string, any>;
+    };
+
+    type IngestionLogStatus = 'UNSTART' | 'RUNNING' | 'CANCEL' | 'DONE' | 'FAIL' | 'SCHEDULE' | string;
+
+    type IngestionLogItem = {
+      id: string;
+      dataset_id?: string;
+      document_id?: string;
+      document_name?: string;
+      pipeline_id?: string;
+      pipeline_title?: string;
+      operation_status?: IngestionLogStatus;
+      task_type?: string;
+      source_from?: string;
+      operation_content?: string;
+      process_duation?: number;
+      process_duration?: number;
+      process_begin_at?: string;
+      process_end_at?: string;
+      create_time?: string;
+      [key: string]: any;
+    };
+
+    type IngestionLogsParams = {
+      page?: number;
+      page_size?: number;
+      orderby?: string;
+      desc?: boolean;
+      operation_status?: string[];
+      create_date_from?: string;
+      create_date_to?: string;
+      log_type?: 'dataset' | 'file';
+      keywords?: string;
+    };
+
+    type IngestionLogsResult = {
+      total: number;
+      logs: IngestionLogItem[];
+    };
   }
 }

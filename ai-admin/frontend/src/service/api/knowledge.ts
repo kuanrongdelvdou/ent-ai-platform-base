@@ -67,6 +67,14 @@ export function fetchUploadDocument(kbId: string, files: File | File[]) {
   });
 }
 
+export function fetchCreateEmptyDocument(kbId: string, name: string) {
+  return request<null>({
+    url: `/knowledge/createEmptyDocument/${kbId}`,
+    method: 'post',
+    data: { name }
+  });
+}
+
 export function fetchDeleteDocuments(kbId: string, documentIds: string[]) {
   return request<null>({
     url: `/knowledge/deleteDocuments/${kbId}`,
@@ -134,10 +142,32 @@ export async function fetchDownloadDocument(kbId: string, docId: string, ext?: s
   return { blob, filename };
 }
 
-export function fetchSearchKnowledgeBase(kbId: string, data: { question: string; page?: number; pageSize?: number }) {
+export function fetchSearchKnowledgeBase(kbId: string, data: Api.Knowledge.SearchForm) {
   return request<Api.Knowledge.SearchResult[]>({
     url: `/knowledge/search/${kbId}`,
     method: 'post',
     data
+  });
+}
+
+export function fetchGetIngestionSummary(kbId: string) {
+  return request<Api.Knowledge.IngestionSummary>({
+    url: `/knowledge/ingestionSummary/${kbId}`,
+    method: 'get'
+  });
+}
+
+export function fetchGetIngestionLogs(kbId: string, params?: Api.Knowledge.IngestionLogsParams) {
+  return request<Api.Knowledge.IngestionLogsResult>({
+    url: `/knowledge/ingestionLogs/${kbId}`,
+    method: 'get',
+    params
+  });
+}
+
+export function fetchGetIngestionLog(kbId: string, logId: string) {
+  return request<Api.Knowledge.IngestionLogItem>({
+    url: `/knowledge/ingestionLog/${kbId}/${logId}`,
+    method: 'get'
   });
 }

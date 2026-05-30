@@ -6,6 +6,7 @@ import { RagflowApiService } from './ragflow-api.service';
 import {
   CreateKnowledgeBaseDto,
   DocumentListDto,
+  IngestionLogsDto,
   KnowledgeBaseListDto,
   SearchDto,
   UpdateDocumentDto,
@@ -251,6 +252,18 @@ export class KnowledgeService {
     return result.data;
   }
 
+  async createEmptyDocument(kbId: string, name: string, user: CurrentUserRef) {
+    const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
+    const filename = String(name ?? '').trim();
+    if (!filename) {
+      throw new BadRequestException('新增空白文档失败：文档名称不能为空');
+    }
+    const result = await this.ragflow.createEmptyDocument(kb.datasetId!, filename);
+    if (!result.success) throw new BadRequestException(`新增空白文档失败：${result.error}`);
+    this.log.info('新增空白文档成功', { kbId, datasetId: kb.datasetId, name: filename, userId: user.userId });
+    return result.data ?? null;
+  }
+
   async deleteDocuments(kbId: string, ids: string[], user: CurrentUserRef) {
     const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
     const result = await this.ragflow.deleteDocuments(kb.datasetId!, ids);
@@ -317,6 +330,27 @@ export class KnowledgeService {
     const result = await this.ragflow.search(kb.datasetId!, dto);
     if (!result.success) throw new BadRequestException(`检索失败：${result.error}`);
     return result.data;
+  }
+
+  async getIngestionSummary(kbId: string, user: CurrentUserRef) {
+    const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
+    const result = await this.ragflow.getIngestionSummary(kb.datasetId!);
+    if (!result.success) throw new BadRequestException(`获取解析概览失败：${result.error}`);
+    return result.data ?? {};
+  }
+
+  async getIngestionLogs(kbId: string, dto: IngestionLogsDto, user: CurrentUserRef) {
+    const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
+    const result = await this.ragflow.getIngestionLogs(kb.datasetId!, dto);
+    if (!result.success) throw new BadRequestException(`获取解析日志失败：${result.error}`);
+    return result.data ?? { total: 0, logs: [] };
+  }
+
+  async getIngestionLog(kbId: string, logId: string, user: CurrentUserRef) {
+    const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
+    const result = await this.ragflow.getIngestionLog(kb.datasetId!, logId);
+    if (!result.success) throw new BadRequestException(`获取日志详情失败：${result.error}`);
+    return result.data ?? {};
   }
 
   private normalizeRagflowList(data: unknown, fallbackChunkMethod: string) {

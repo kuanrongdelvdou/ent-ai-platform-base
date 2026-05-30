@@ -22,9 +22,11 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { OperationLog } from '../common/decorators/operation-log.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import {
+  CreateEmptyDocumentDto,
   CreateKnowledgeBaseDto,
   DeleteDocumentDto,
   DocumentListDto,
+  IngestionLogsDto,
   KnowledgeBaseListDto,
   ParseDocumentDto,
   SearchDto,
@@ -61,7 +63,11 @@ export class KnowledgeController {
   @Permissions('knowledge:edit')
   @OperationLog('知识库', '编辑知识库')
   @Put('updateKnowledgeBase/:id')
-  updateKnowledgeBase(@Param('id') id: string, @Body() dto: UpdateKnowledgeBaseDto, @CurrentUser() user: { userId: string }) {
+  updateKnowledgeBase(
+    @Param('id') id: string,
+    @Body() dto: UpdateKnowledgeBaseDto,
+    @CurrentUser() user: { userId: string },
+  ) {
     return this.knowledgeService.update(id, dto, user);
   }
 
@@ -84,11 +90,26 @@ export class KnowledgeController {
   @UseInterceptors(FilesInterceptor('file', 64))
   uploadDocument(@Param('kbId') kbId: string, @UploadedFiles() files: any[], @CurrentUser() user: { userId: string }) {
     if (!files?.length) throw new BadRequestException('缺少文件');
-    return this.knowledgeService.uploadDocuments(kbId, files.map((file) => ({
-      buffer: file.buffer,
-      originalname: file.originalname,
-      mimetype: file.mimetype,
-    })), user);
+    return this.knowledgeService.uploadDocuments(
+      kbId,
+      files.map(file => ({
+        buffer: file.buffer,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+      })),
+      user,
+    );
+  }
+
+  @Permissions('knowledge:add')
+  @OperationLog('知识库', '新增空白文档')
+  @Post('createEmptyDocument/:kbId')
+  createEmptyDocument(
+    @Param('kbId') kbId: string,
+    @Body() dto: CreateEmptyDocumentDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.knowledgeService.createEmptyDocument(kbId, dto.name, user);
   }
 
   @Permissions('knowledge:delete')
@@ -155,5 +176,28 @@ export class KnowledgeController {
   @Post('search/:kbId')
   search(@Param('kbId') kbId: string, @Body() dto: SearchDto, @CurrentUser() user: { userId: string }) {
     return this.knowledgeService.search(kbId, dto, user);
+  }
+
+  @Get('ingestionSummary/:kbId')
+  ingestionSummary(@Param('kbId') kbId: string, @CurrentUser() user: { userId: string }) {
+    return this.knowledgeService.getIngestionSummary(kbId, user);
+  }
+
+  @Get('ingestionLogs/:kbId')
+  ingestionLogs(
+    @Param('kbId') kbId: string,
+    @Query() dto: IngestionLogsDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.knowledgeService.getIngestionLogs(kbId, dto, user);
+  }
+
+  @Get('ingestionLog/:kbId/:logId')
+  ingestionLog(
+    @Param('kbId') kbId: string,
+    @Param('logId') logId: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.knowledgeService.getIngestionLog(kbId, logId, user);
   }
 }

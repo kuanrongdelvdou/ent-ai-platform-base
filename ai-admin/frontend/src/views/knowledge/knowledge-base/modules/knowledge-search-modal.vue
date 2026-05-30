@@ -38,7 +38,7 @@ async function handleSearch() {
     const { error, data } = await fetchSearchKnowledgeBase(props.knowledgeBase.id, {
       question: question.value.trim(),
       page: 1,
-      pageSize: 10
+      size: 10
     });
 
     if (!error) {
