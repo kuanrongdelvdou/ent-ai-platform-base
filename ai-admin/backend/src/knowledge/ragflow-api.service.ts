@@ -137,9 +137,28 @@ export class RagflowApiService {
 
   async listDocuments(
     datasetId: string,
-    params: { page?: number; page_size?: number; keywords?: string },
+    params: {
+      page?: number;
+      page_size?: number;
+      keywords?: string;
+      run?: string[];
+      suffix?: string[];
+      type?: string;
+    },
   ) {
     return this.request<Record<string, unknown>>(`/datasets/${datasetId}/documents`, { params });
+  }
+
+  async ingestDocuments(data: {
+    doc_ids: string[];
+    run: 1 | 2;
+    delete?: boolean;
+    apply_kb?: boolean;
+  }) {
+    return this.request<boolean>('/documents/ingest', {
+      method: 'POST',
+      body: data,
+    });
   }
 
   async uploadDocuments(
@@ -251,6 +270,39 @@ export class RagflowApiService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.log.error('RAGFlow 文档下载失败', error);
+      return { success: false, error: message };
+    }
+  }
+
+  async previewDocument(documentId: string) {
+    const url = `${this.baseUrl}/api/v1/documents/${documentId}/preview`;
+    const headers: Record<string, string> = {};
+    if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
+
+    this.log.debug('预览 RAGFlow 文档', { documentId });
+
+    try {
+      const response = await fetch(url, { method: 'GET', headers });
+      if (!response.ok) {
+        const text = await response.text();
+        return { success: false, error: text || `HTTP ${response.status}` };
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const contentType = response.headers.get('content-type') || 'application/octet-stream';
+      const contentDisposition = response.headers.get('content-disposition') || undefined;
+
+      return {
+        success: true,
+        data: {
+          buffer,
+          contentType,
+          contentDisposition,
+        } satisfies DownloadResult,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.log.error('RAGFlow 文档预览失败', error);
       return { success: false, error: message };
     }
   }

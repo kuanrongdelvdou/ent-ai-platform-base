@@ -140,12 +140,68 @@ export class DocumentListDto {
   @IsOptional()
   @IsString()
   keywords?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (Array.isArray(value)) return value;
+    return String(value)
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean);
+  })
+  @IsArray()
+  @IsString({ each: true })
+  run?: string[];
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (Array.isArray(value)) return value;
+    return String(value)
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean);
+  })
+  @IsArray()
+  @IsString({ each: true })
+  suffix?: string[];
+}
+
+export class DocumentFilterDto {
+  @IsOptional()
+  @IsString()
+  keywords?: string;
 }
 
 export class ParseDocumentDto {
   @IsArray()
   @IsString({ each: true })
   ids: string[];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsIn([1, 2])
+  run?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (typeof value === 'boolean') return value;
+    return String(value).toLowerCase() === 'true';
+  })
+  @IsBoolean()
+  delete?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (typeof value === 'boolean') return value;
+    return String(value).toLowerCase() === 'true';
+  })
+  @IsBoolean()
+  applyKb?: boolean;
 }
 
 export class DeleteDocumentDto {

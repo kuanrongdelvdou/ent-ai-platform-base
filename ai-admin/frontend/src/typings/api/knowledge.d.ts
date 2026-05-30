@@ -131,9 +131,20 @@ declare namespace Api {
       current: number;
       size: number;
       keywords?: string;
+      run?: string[];
+      suffix?: string[];
     }>;
 
     type DocumentList = Common.PaginatingQueryRecord<Document>;
+
+    type DocumentFilters = {
+      total?: number;
+      filter?: {
+        run_status?: Record<string, number>;
+        suffix?: Record<string, number>;
+        metadata?: Record<string, number>;
+      };
+    };
 
     type SearchResult = {
       id?: string;

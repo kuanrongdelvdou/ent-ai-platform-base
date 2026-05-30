@@ -48,8 +48,18 @@ export function fetchGetDocumentList(kbId: string, params?: Api.Knowledge.Docume
     params: {
       page: params?.current,
       page_size: params?.size,
-      keywords: params?.keywords
+      keywords: params?.keywords,
+      run: params?.run,
+      suffix: params?.suffix
     }
+  });
+}
+
+export function fetchGetDocumentFilters(kbId: string, params?: { keywords?: string }) {
+  return request<Api.Knowledge.DocumentFilters>({
+    url: `/knowledge/getDocumentFilters/${kbId}`,
+    method: 'get',
+    params
   });
 }
 
@@ -88,6 +98,17 @@ export function fetchParseDocuments(kbId: string, documentIds: string[]) {
     url: `/knowledge/parseDocuments/${kbId}`,
     method: 'post',
     data: { ids: documentIds }
+  });
+}
+
+export function fetchRunDocuments(
+  kbId: string,
+  data: { ids: string[]; run: 1 | 2; delete?: boolean; applyKb?: boolean }
+) {
+  return request<null>({
+    url: `/knowledge/runDocuments/${kbId}`,
+    method: 'post',
+    data
   });
 }
 
@@ -140,6 +161,22 @@ export async function fetchDownloadDocument(kbId: string, docId: string, ext?: s
   const filename = filenameMatch?.[1] ? decodeURIComponent(filenameMatch[1]) : undefined;
 
   return { blob, filename };
+}
+
+export async function fetchPreviewDocument(kbId: string, docId: string) {
+  const url = `${baseURL}/knowledge/previewDocument/${kbId}/${docId}`;
+  const authorization = getAuthorization();
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: authorization ? { Authorization: authorization } : undefined
+  });
+
+  if (!response.ok) {
+    throw new Error(`预览失败: ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  return { blob, contentType: response.headers.get('content-type') || 'application/octet-stream' };
 }
 
 export function fetchSearchKnowledgeBase(kbId: string, data: Api.Knowledge.SearchForm) {

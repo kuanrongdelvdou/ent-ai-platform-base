@@ -25,6 +25,7 @@ import {
   CreateEmptyDocumentDto,
   CreateKnowledgeBaseDto,
   DeleteDocumentDto,
+  DocumentFilterDto,
   DocumentListDto,
   IngestionLogsDto,
   KnowledgeBaseListDto,
@@ -41,7 +42,7 @@ import { KnowledgeService } from './knowledge.service';
 @UseGuards(JwtAuthGuard)
 @Controller('knowledge')
 export class KnowledgeController {
-  constructor(private knowledgeService: KnowledgeService) {}
+  constructor(private readonly knowledgeService: KnowledgeService) {}
 
   @Get('getKnowledgeBaseList')
   getKnowledgeBaseList(@Query() dto: KnowledgeBaseListDto, @CurrentUser() user: { userId: string }) {
@@ -83,13 +84,22 @@ export class KnowledgeController {
     return this.knowledgeService.getDocumentList(kbId, dto, user);
   }
 
+  @Get('getDocumentFilters/:kbId')
+  getDocumentFilters(
+    @Param('kbId') kbId: string,
+    @Query() dto: DocumentFilterDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.knowledgeService.getDocumentFilters(kbId, dto, user);
+  }
+
   @Permissions('knowledge:add')
   @OperationLog('知识库', '上传文档')
   @Post('uploadDocument/:kbId')
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('file', 64))
   uploadDocument(@Param('kbId') kbId: string, @UploadedFiles() files: any[], @CurrentUser() user: { userId: string }) {
-    if (!files?.length) throw new BadRequestException('缺少文件');
+    if (!files?.length) throw new BadRequestException('缺少文档文件');
     return this.knowledgeService.uploadDocuments(
       kbId,
       files.map(file => ({
@@ -123,7 +133,10 @@ export class KnowledgeController {
   @OperationLog('知识库', '解析文档')
   @Post('parseDocuments/:kbId')
   parseDocuments(@Param('kbId') kbId: string, @Body() dto: ParseDocumentDto, @CurrentUser() user: { userId: string }) {
-    return this.knowledgeService.parseDocuments(kbId, dto.ids, user);
+    return this.knowledgeService.parseDocuments(kbId, dto.ids, user, {
+      delete: dto.delete,
+      applyKb: dto.applyKb,
+    });
   }
 
   @Permissions('knowledge:add')
@@ -131,6 +144,18 @@ export class KnowledgeController {
   @Post('stopParsing/:kbId')
   stopParsing(@Param('kbId') kbId: string, @Body() dto: ParseDocumentDto, @CurrentUser() user: { userId: string }) {
     return this.knowledgeService.stopParsing(kbId, dto.ids, user);
+  }
+
+  @Permissions('knowledge:add')
+  @OperationLog('知识库', '执行解析任务')
+  @Post('runDocuments/:kbId')
+  runDocuments(@Param('kbId') kbId: string, @Body() dto: ParseDocumentDto, @CurrentUser() user: { userId: string }) {
+    const run = (dto.run ?? 1) as 1 | 2;
+    return this.knowledgeService.runDocuments(
+      kbId,
+      { ids: dto.ids, run, delete: dto.delete, applyKb: dto.applyKb },
+      user,
+    );
   }
 
   @Permissions('knowledge:edit')
@@ -154,6 +179,21 @@ export class KnowledgeController {
     @CurrentUser() user: { userId: string },
   ) {
     return this.knowledgeService.updateDocumentStatus(kbId, dto, user);
+  }
+
+  @Get('previewDocument/:kbId/:docId')
+  async previewDocument(
+    @Param('kbId') kbId: string,
+    @Param('docId') docId: string,
+    @CurrentUser() user: { userId: string },
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.knowledgeService.previewDocument(kbId, docId, user);
+    response.setHeader('Content-Type', file.contentType);
+    if (file.contentDisposition) {
+      response.setHeader('Content-Disposition', file.contentDisposition);
+    }
+    return new StreamableFile(file.buffer);
   }
 
   @Get('downloadDocument/:kbId/:docId')
@@ -201,3 +241,4 @@ export class KnowledgeController {
     return this.knowledgeService.getIngestionLog(kbId, logId, user);
   }
 }
+

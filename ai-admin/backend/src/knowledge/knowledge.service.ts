@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
 import { AppLoggerService } from '../common/logger/app-logger.service';
-import { RagflowApiService } from './ragflow-api.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { AiHubService } from './ai-hub.service';
 import {
   CreateKnowledgeBaseDto,
   DocumentListDto,
@@ -13,8 +13,8 @@ import {
   UpdateDocumentStatusDto,
   UpdateKnowledgeBaseDto,
 } from './dto/knowledge.dto';
-import { AiHubService } from './ai-hub.service';
 import { KnowledgeAccessService } from './knowledge-access.service';
+import { RagflowApiService } from './ragflow-api.service';
 
 type CurrentUserRef = { userId: string };
 
@@ -23,17 +23,22 @@ export class KnowledgeService {
   private readonly log = new AppLoggerService('KnowledgeService');
 
   constructor(
-    private prisma: PrismaService,
-    private ragflow: RagflowApiService,
-    private access: KnowledgeAccessService,
-    private aiHub: AiHubService,
+    private readonly prisma: PrismaService,
+    private readonly ragflow: RagflowApiService,
+    private readonly access: KnowledgeAccessService,
+    private readonly aiHub: AiHubService,
   ) {}
+
+  private getKnowledgeBaseFieldSet() {
+    const model = Prisma.dmmf.datamodel.models.find(item => item.name === 'KnowledgeBase');
+    return new Set(model?.fields.map(item => item.name) ?? []);
+  }
 
   async getList(params: KnowledgeBaseListDto & { userId?: string }) {
     this.log.debug('查询知识库列表', params);
     const current = params.current ?? 1;
     const size = params.size ?? 10;
-    const where: Record<string, any> = {};
+    const where: Record<string, unknown> = {};
 
     if (params.name) where.name = { contains: params.name };
     if (params.status) where.status = Number(params.status);
@@ -63,13 +68,13 @@ export class KnowledgeService {
         name: item.name,
         description: item.description,
         datasetId: item.datasetId,
-        deptId: (item as any).deptId,
-        ownerId: (item as any).ownerId,
-        visibility: (item as any).visibility,
-        embeddingModelId: (item as any).embeddingModelId,
-        parseType: (item as any).parseType,
+        deptId: (item as any).deptId ?? null,
+        ownerId: (item as any).ownerId ?? null,
+        visibility: (item as any).visibility ?? null,
+        embeddingModelId: (item as any).embeddingModelId ?? null,
+        parseType: (item as any).parseType ?? null,
         chunkMethod: item.chunkMethod,
-        pipelineId: (item as any).pipelineId,
+        pipelineId: (item as any).pipelineId ?? null,
         parserConfig: item.parserConfig,
         status: String(item.status),
         roleIds: item.knowledgeBaseRoles.map((role) => role.roleId),
@@ -87,20 +92,23 @@ export class KnowledgeService {
   async getDataPipelines() {
     const result = await this.ragflow.listDataPipelines<{
       canvas?: Array<{ id?: string; title?: string; name?: string }>;
-      total?: number;
     }>();
+
     if (!result.success) {
       throw new BadRequestException(`获取 RAGFlow pipeline 失败：${result.error || '未知错误'}`);
     }
 
-    return (result.data?.canvas ?? []).map((item) => ({
-      id: item.id,
-      name: item.title ?? item.name ?? item.id,
-    })).filter((item) => item.id);
+    return (result.data?.canvas ?? [])
+      .map((item) => ({
+        id: item.id,
+        name: item.title ?? item.name ?? item.id,
+      }))
+      .filter((item): item is { id: string; name: string } => Boolean(item.id));
   }
 
   async create(dto: CreateKnowledgeBaseDto, user: CurrentUserRef) {
     this.log.info('创建知识库', { name: dto.name, userId: user.userId, deptId: dto.deptId });
+
     const readiness = await this.aiHub.assertReady();
     const parseType = dto.parseType ?? 1;
     const embeddingModel = dto.embeddingModel ?? readiness.defaultModels.embedding?.id;
@@ -129,32 +137,32 @@ export class KnowledgeService {
       throw new BadRequestException(`创建 RAGFlow 知识库失败：${ragflowResult.error || '未知错误'}`);
     }
 
-    const datasetId = String(
-      (ragflowResult.data as any).dataset_id ?? (ragflowResult.data as any).id ?? '',
-    );
+    const datasetId = String((ragflowResult.data as any).dataset_id ?? (ragflowResult.data as any).id ?? '');
     if (!datasetId) throw new BadRequestException('RAGFlow 未返回 datasetId');
 
     try {
       const deptId = dto.deptId ?? await this.access.getDefaultDeptId(user.userId);
-      const kb = await this.prisma.knowledgeBase.create({
-        data: {
-          name: dto.name,
-          description: dto.description,
-          datasetId,
-          visibility: dto.visibility ?? 'dept',
-          embeddingModelId: embeddingModel,
-          parseType,
-          chunkMethod: parseType === 1 ? dto.chunkMethod : null,
-          pipelineId: parseType === 2 ? dto.pipelineId : null,
-          parserConfig: dto.parserConfig as Prisma.InputJsonValue,
-          status: Number(dto.status ?? 1),
-          owner: { connect: { id: user.userId } },
-          ...(deptId ? { dept: { connect: { id: deptId } } } : {}),
-          knowledgeBaseRoles: {
-            create: (dto.roleIds ?? []).map((roleId) => ({ roleId })),
-          },
-        } as any,
-      });
+      const fieldSet = this.getKnowledgeBaseFieldSet();
+      const createData: Record<string, unknown> = {
+        name: dto.name,
+        description: dto.description,
+        datasetId,
+        status: Number(dto.status ?? 1),
+        owner: { connect: { id: user.userId } },
+        ...(deptId ? { dept: { connect: { id: deptId } } } : {}),
+        knowledgeBaseRoles: {
+          create: (dto.roleIds ?? []).map((roleId) => ({ roleId })),
+        },
+      };
+
+      if (fieldSet.has('visibility')) createData.visibility = dto.visibility ?? 'dept';
+      if (fieldSet.has('embeddingModelId')) createData.embeddingModelId = embeddingModel;
+      if (fieldSet.has('parseType')) createData.parseType = parseType;
+      if (fieldSet.has('chunkMethod')) createData.chunkMethod = parseType === 1 ? dto.chunkMethod : null;
+      if (fieldSet.has('pipelineId')) createData.pipelineId = parseType === 2 ? dto.pipelineId : null;
+      if (fieldSet.has('parserConfig')) createData.parserConfig = dto.parserConfig as Prisma.InputJsonValue;
+
+      const kb = await this.prisma.knowledgeBase.create({ data: createData as any });
       this.log.info('创建知识库成功', { id: kb.id, datasetId, userId: user.userId, deptId });
       return null;
     } catch (error) {
@@ -187,36 +195,40 @@ export class KnowledgeService {
       throw new BadRequestException(`更新 RAGFlow 知识库失败：${ragflowResult.error || '未知错误'}`);
     }
 
+    const fieldSet = this.getKnowledgeBaseFieldSet();
     await this.prisma.$transaction(async (tx) => {
       await tx.knowledgeBaseRole.deleteMany({ where: { kbId: id } });
+      const updateData: Record<string, unknown> = {
+        name: dto.name,
+        description: dto.description,
+        status: dto.status === undefined ? undefined : Number(dto.status),
+        ...(dto.deptId === undefined
+          ? {}
+          : { dept: dto.deptId ? { connect: { id: dto.deptId } } : { disconnect: true } }),
+        knowledgeBaseRoles: {
+          create: (dto.roleIds ?? []).map((roleId) => ({ roleId })),
+        },
+      };
+
+      if (fieldSet.has('visibility')) updateData.visibility = dto.visibility;
+      if (fieldSet.has('embeddingModelId')) updateData.embeddingModelId = dto.embeddingModel;
+      if (fieldSet.has('parseType')) updateData.parseType = dto.parseType;
+      if (fieldSet.has('chunkMethod')) updateData.chunkMethod = parseType === 1 ? dto.chunkMethod : null;
+      if (fieldSet.has('pipelineId')) updateData.pipelineId = parseType === 2 ? dto.pipelineId : null;
+      if (fieldSet.has('parserConfig')) updateData.parserConfig = dto.parserConfig as Prisma.InputJsonValue;
+
       await tx.knowledgeBase.update({
         where: { id },
-        data: {
-          name: dto.name,
-          description: dto.description,
-          visibility: dto.visibility,
-          embeddingModelId: dto.embeddingModel,
-          parseType: dto.parseType,
-          chunkMethod: parseType === 1 ? dto.chunkMethod : null,
-          pipelineId: parseType === 2 ? dto.pipelineId : null,
-          parserConfig: dto.parserConfig as Prisma.InputJsonValue,
-          status: dto.status === undefined ? undefined : Number(dto.status),
-          ...(dto.deptId === undefined
-            ? {}
-            : { dept: dto.deptId ? { connect: { id: dto.deptId } } : { disconnect: true } }),
-          knowledgeBaseRoles: {
-            create: (dto.roleIds ?? []).map((roleId) => ({ roleId })),
-          },
-        } as any,
+        data: updateData as any,
       });
     });
+
     this.log.info('更新知识库成功', { id, userId: user.userId });
     return null;
   }
 
   async remove(id: string, user: CurrentUserRef) {
     const kb = await this.access.assertCanAccessKnowledgeBase(id, user.userId);
-
     const ragflowResult = await this.ragflow.deleteDataset(kb.datasetId);
     if (!ragflowResult.success) {
       throw new BadRequestException(`删除 RAGFlow 知识库失败：${ragflowResult.error || '未知错误'}`);
@@ -234,6 +246,13 @@ export class KnowledgeService {
     return this.normalizeRagflowList(result.data, kb.chunkMethod ?? 'naive');
   }
 
+  async getDocumentFilters(kbId: string, dto: { keywords?: string }, user: CurrentUserRef) {
+    const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
+    const result = await this.ragflow.listDocuments(kb.datasetId!, { type: 'filter', keywords: dto.keywords });
+    if (!result.success) throw new BadRequestException(`获取文档筛选项失败：${result.error}`);
+    return result.data ?? { total: 0, filter: {} };
+  }
+
   async uploadDocuments(
     kbId: string,
     files: Array<{ buffer: Buffer; originalname: string; mimetype: string }>,
@@ -242,6 +261,7 @@ export class KnowledgeService {
     const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
     const result = await this.ragflow.uploadDocuments(kb.datasetId!, files);
     if (!result.success) throw new BadRequestException(`上传文档失败：${result.error}`);
+
     await this.prisma.knowledgeBase.update({ where: { id: kbId }, data: { status: 1 } });
     this.log.info('上传文档成功', {
       kbId,
@@ -272,21 +292,51 @@ export class KnowledgeService {
     return null;
   }
 
-  async parseDocuments(kbId: string, ids: string[], user: CurrentUserRef) {
+  async runDocuments(
+    kbId: string,
+    payload: { ids: string[]; run: 1 | 2; delete?: boolean; applyKb?: boolean },
+    user: CurrentUserRef,
+  ) {
     const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
-    const result = await this.ragflow.parseDocuments(kb.datasetId!, ids);
-    if (!result.success) throw new BadRequestException(`解析文档失败：${result.error}`);
-    await this.prisma.knowledgeBase.update({ where: { id: kbId }, data: { status: 1 } });
-    this.log.info('启动文档解析成功', { kbId, ids, userId: user.userId });
+    const result = await this.ragflow.ingestDocuments({
+      doc_ids: payload.ids,
+      run: payload.run,
+      delete: payload.delete,
+      apply_kb: payload.applyKb,
+    });
+
+    if (!result.success) throw new BadRequestException(`文档解析任务执行失败：${result.error}`);
+
+    if (payload.run === 1) {
+      await this.prisma.knowledgeBase.update({ where: { id: kbId }, data: { status: 1 } });
+    }
+
+    this.log.info('执行文档解析任务成功', {
+      kbId,
+      ids: payload.ids,
+      run: payload.run,
+      delete: payload.delete ?? false,
+      applyKb: payload.applyKb ?? false,
+      userId: user.userId,
+    });
     return result.data ?? null;
   }
 
+  async parseDocuments(
+    kbId: string,
+    ids: string[],
+    user: CurrentUserRef,
+    options?: { delete?: boolean; applyKb?: boolean },
+  ) {
+    return this.runDocuments(
+      kbId,
+      { ids, run: 1, delete: options?.delete, applyKb: options?.applyKb },
+      user,
+    );
+  }
+
   async stopParsing(kbId: string, ids: string[], user: CurrentUserRef) {
-    const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
-    const result = await this.ragflow.stopParsing(kb.datasetId!, ids);
-    if (!result.success) throw new BadRequestException(`停止解析失败：${result.error}`);
-    this.log.info('停止文档解析成功', { kbId, ids, userId: user.userId });
-    return result.data ?? null;
+    return this.runDocuments(kbId, { ids, run: 2 }, user);
   }
 
   async updateDocument(kbId: string, docId: string, dto: UpdateDocumentDto, user: CurrentUserRef) {
@@ -314,6 +364,16 @@ export class KnowledgeService {
     if (!result.success) throw new BadRequestException(`更新文档状态失败：${result.error}`);
     this.log.info('更新文档状态成功', { kbId, docIds: dto.docIds, status: dto.status, userId: user.userId });
     return result.data ?? null;
+  }
+
+  async previewDocument(kbId: string, docId: string, user: CurrentUserRef) {
+    const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
+    const result = await this.ragflow.previewDocument(docId);
+    if (!result.success || !result.data) {
+      throw new BadRequestException(`预览文档失败：${result.error || '未知错误'}`);
+    }
+    this.log.info('预览文档成功', { kbId, docId, datasetId: kb.datasetId, userId: user.userId });
+    return result.data;
   }
 
   async downloadDocument(kbId: string, docId: string, ext: string | undefined, user: CurrentUserRef) {
@@ -354,7 +414,8 @@ export class KnowledgeService {
   }
 
   private normalizeRagflowList(data: unknown, fallbackChunkMethod: string) {
-    const normalizeItems = (items: unknown[]) => items.map((item) => this.normalizeRagflowDocument(item, fallbackChunkMethod));
+    const normalizeItems = (items: unknown[]) =>
+      items.map((item) => this.normalizeRagflowDocument(item, fallbackChunkMethod));
 
     if (Array.isArray(data)) {
       return { records: normalizeItems(data), total: data.length };
@@ -421,3 +482,4 @@ export class KnowledgeService {
     };
   }
 }
+

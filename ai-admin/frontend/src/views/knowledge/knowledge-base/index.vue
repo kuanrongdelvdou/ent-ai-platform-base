@@ -8,10 +8,11 @@ import {
   fetchDeleteKnowledgeBase,
   fetchDownloadDocument,
   fetchGetAiHubReadiness,
+  fetchGetDocumentFilters,
   fetchGetDocumentList,
   fetchGetKnowledgeBaseList,
-  fetchParseDocuments,
-  fetchStopParsing,
+  fetchPreviewDocument,
+  fetchRunDocuments,
   fetchUpdateDocument,
   fetchUpdateDocumentStatus,
   fetchUpdateKnowledgeBase
@@ -50,6 +51,14 @@ const docsTotal = ref(0);
 const docsKeywords = ref('');
 const checkedDocIds = ref<string[]>([]);
 
+const docFilterLoading = ref(false);
+const docFilter = ref<Api.Knowledge.DocumentFilters['filter'] | null>(null);
+const selectedRunFilters = ref<string[]>([]);
+const selectedSuffixFilters = ref<string[]>([]);
+const pendingRunFilters = ref<string[]>([]);
+const pendingSuffixFilters = ref<string[]>([]);
+const docFilterPopoverVisible = ref(false);
+
 const createVisible = ref(false);
 const uploadVisible = ref(false);
 const emptyVisible = ref(false);
@@ -65,6 +74,12 @@ const renameDocumentVisible = ref(false);
 const renameDocumentValue = ref('');
 const renamingDocument = ref<Api.Knowledge.Document | null>(null);
 const renamingDocumentLoading = ref(false);
+
+const reparseVisible = ref(false);
+const reparseLoading = ref(false);
+const reparseTarget = ref<Api.Knowledge.Document | null>(null);
+const reparseDelete = ref(true);
+const reparseApplyKb = ref(false);
 
 const statusOptions: Array<{ label: string; key: 'all' | '1' | '2' }> = [
   { label: '全部', key: 'all' },
@@ -117,11 +132,34 @@ const addFileOptions: DropdownOption[] = [
 ];
 
 const uploadLimitTip =
-  '支持单次或批量上传。本地部署单次上传总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限制文件数量。';
+  '支持单次或批量上传。本地部署的单次上传总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。';
 
 const canCreateKnowledgeBase = computed(
   () => hasAuth('knowledge:add') && aiReadiness.value?.status === 'READY'
 );
+
+const hasDocumentFilter = computed(
+  () => selectedRunFilters.value.length > 0 || selectedSuffixFilters.value.length > 0
+);
+
+const runFilterOptions = computed(() => {
+  const source = docFilter.value?.run_status ?? {};
+  return Object.entries(source).map(([key, count]) => ({
+    key,
+    label: `${getRunStatusText(key)} (${count})`
+  }));
+});
+
+const suffixFilterOptions = computed(() => {
+  const source = docFilter.value?.suffix ?? {};
+  return Object.entries(source).map(([key, count]) => ({
+    key,
+    label: `${key} (${count})`
+  }));
+});
+
+const showReparseDelete = computed(() => Number(reparseTarget.value?.chunkNum ?? 0) > 0);
+const showReparseApplyKb = computed(() => Boolean((reparseTarget.value?.parserConfig as any)?.enable_metadata));
 
 const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() => [
   {
@@ -234,7 +272,7 @@ const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() =>
             size: 'small',
             class: `doc-run-action doc-run-action--${state.toLowerCase()}`,
             disabled: !hasAuth('knowledge:add'),
-            onClick: () => (isRunning ? handleStopDocuments([row.id]) : handleParseDocuments([row.id]))
+            onClick: () => handleRunActionClick(row)
           },
           {
             icon: () => h(SvgIcon, { icon }),
@@ -306,21 +344,8 @@ const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() =>
 
 function getCardMenuOptions() {
   const options: DropdownOption[] = [];
-
-  if (hasAuth('knowledge:edit')) {
-    options.push({
-      label: '重命名',
-      key: 'rename'
-    });
-  }
-
-  if (hasAuth('knowledge:delete')) {
-    options.push({
-      label: '删除',
-      key: 'delete'
-    });
-  }
-
+  if (hasAuth('knowledge:edit')) options.push({ label: '重命名', key: 'rename' });
+  if (hasAuth('knowledge:delete')) options.push({ label: '删除', key: 'delete' });
   return options;
 }
 
@@ -344,10 +369,6 @@ function formatDate(value?: string) {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-function getRunStatusText(run?: string) {
-  return runStateTextMap[getRunState(run)] || '待解析';
-}
-
 function getRunState(run?: string) {
   const value = String(run ?? '').toUpperCase();
   if (value === '1' || value === 'RUNNING') return 'RUNNING';
@@ -356,6 +377,10 @@ function getRunState(run?: string) {
   if (value === '4' || value === 'FAIL') return 'FAIL';
   if (value === '5' || value === 'SCHEDULE') return 'SCHEDULE';
   return 'UNSTART';
+}
+
+function getRunStatusText(run?: string) {
+  return runStateTextMap[getRunState(run)] || '待解析';
 }
 
 function getRunActionIcon(state: string) {
@@ -382,8 +407,7 @@ function getDocumentEnabled(row: Api.Knowledge.Document) {
 
 function getDocumentMetaFieldCount(row: Api.Knowledge.Document) {
   const metaFields = (row.metaFields ?? (row as any).meta_fields ?? {}) as Record<string, unknown>;
-  if (!metaFields || typeof metaFields !== 'object') return 0;
-  return Object.keys(metaFields).length;
+  return metaFields && typeof metaFields === 'object' ? Object.keys(metaFields).length : 0;
 }
 
 function getParseMethodText(row: Api.Knowledge.Document) {
@@ -440,19 +464,14 @@ async function loadAiReadiness() {
   readinessLoading.value = true;
   try {
     const { error, data } = await fetchGetAiHubReadiness();
-    if (!error) {
-      aiReadiness.value = data;
-    }
+    if (!error) aiReadiness.value = data;
   } finally {
     readinessLoading.value = false;
   }
 }
 
 async function loadKnowledgeBaseList(resetPage = false) {
-  if (resetPage) {
-    page.value = 1;
-  }
-
+  if (resetPage) page.value = 1;
   listLoading.value = true;
   try {
     const { error, data } = await fetchGetKnowledgeBaseList({
@@ -462,7 +481,6 @@ async function loadKnowledgeBaseList(resetPage = false) {
       status: statusFilter.value === 'all' ? null : statusFilter.value
     });
     if (error || !data) return;
-
     list.value = data.records || [];
     total.value = data.total || 0;
     page.value = data.current || page.value;
@@ -472,18 +490,33 @@ async function loadKnowledgeBaseList(resetPage = false) {
   }
 }
 
+async function loadDocumentFilters() {
+  if (!activeKnowledgeBase.value) return;
+  docFilterLoading.value = true;
+  try {
+    const { error, data } = await fetchGetDocumentFilters(activeKnowledgeBase.value.id, {
+      keywords: docsKeywords.value || undefined
+    });
+    if (!error) {
+      docFilter.value = data?.filter || { run_status: {}, suffix: {}, metadata: {} };
+    }
+  } finally {
+    docFilterLoading.value = false;
+  }
+}
+
 async function loadDocuments(resetPage = false) {
   if (!activeKnowledgeBase.value) return;
-  if (resetPage) {
-    docsPage.value = 1;
-  }
+  if (resetPage) docsPage.value = 1;
 
   docsLoading.value = true;
   try {
     const { error, data } = await fetchGetDocumentList(activeKnowledgeBase.value.id, {
       current: docsPage.value,
       size: docsPageSize.value,
-      keywords: docsKeywords.value || undefined
+      keywords: docsKeywords.value || undefined,
+      run: selectedRunFilters.value.length ? selectedRunFilters.value : undefined,
+      suffix: selectedSuffixFilters.value.length ? selectedSuffixFilters.value : undefined
     });
     if (error || !data) return;
 
@@ -498,16 +531,12 @@ async function loadDocuments(resetPage = false) {
 
 async function handleCreateKnowledgeBase() {
   if (!hasAuth('knowledge:add')) return;
-
-  if (!aiReadiness.value) {
-    await loadAiReadiness();
-  }
+  if (!aiReadiness.value) await loadAiReadiness();
 
   if (aiReadiness.value?.status !== 'READY') {
     window.$message?.warning('请先完成模型配置后再创建知识库');
     return;
   }
-
   createVisible.value = true;
 }
 
@@ -516,12 +545,16 @@ function handleStatusSelect(key: string | number) {
   loadKnowledgeBaseList(true);
 }
 
-function handleEnterKnowledgeBase(item: Api.Knowledge.KnowledgeBase) {
+async function handleEnterKnowledgeBase(item: Api.Knowledge.KnowledgeBase) {
   activeKnowledgeBase.value = item;
   activeDetailTab.value = 'file';
   docsKeywords.value = '';
   checkedDocIds.value = [];
-  loadDocuments(true);
+  selectedRunFilters.value = [];
+  selectedSuffixFilters.value = [];
+  pendingRunFilters.value = [];
+  pendingSuffixFilters.value = [];
+  await Promise.all([loadDocumentFilters(), loadDocuments(true)]);
 }
 
 function handleBackToList() {
@@ -546,16 +579,13 @@ async function handleDeleteKnowledgeBase(item: Api.Knowledge.KnowledgeBase) {
   const { error } = await fetchDeleteKnowledgeBase(item.id);
   if (error) return;
   window.$message?.success('删除成功');
-  if (activeKnowledgeBase.value?.id === item.id) {
-    activeKnowledgeBase.value = null;
-  }
+  if (activeKnowledgeBase.value?.id === item.id) activeKnowledgeBase.value = null;
   await loadKnowledgeBaseList();
 }
 
 async function handleSubmitRename() {
   const kb = renamingKnowledgeBase.value;
   const nextName = renameValue.value.trim();
-
   if (!kb || !nextName) return;
 
   renamingLoading.value = true;
@@ -572,18 +602,59 @@ async function handleSubmitRename() {
   }
 }
 
-async function handleParseDocuments(ids: string[]) {
+async function runDocuments(ids: string[], run: 1 | 2, options?: { delete?: boolean; applyKb?: boolean }) {
   if (!activeKnowledgeBase.value || !ids.length) return;
-  const { error } = await fetchParseDocuments(activeKnowledgeBase.value.id, ids);
+  const { error } = await fetchRunDocuments(activeKnowledgeBase.value.id, {
+    ids,
+    run,
+    delete: options?.delete,
+    applyKb: options?.applyKb
+  });
   if (error) return;
   await loadDocuments();
 }
 
+async function handleParseDocuments(ids: string[], options?: { delete?: boolean; applyKb?: boolean }) {
+  await runDocuments(ids, 1, options);
+}
+
 async function handleStopDocuments(ids: string[]) {
-  if (!activeKnowledgeBase.value || !ids.length) return;
-  const { error } = await fetchStopParsing(activeKnowledgeBase.value.id, ids);
-  if (error) return;
-  await loadDocuments();
+  await runDocuments(ids, 2);
+}
+
+function openReparseModal(row: Api.Knowledge.Document) {
+  reparseTarget.value = row;
+  reparseDelete.value = Number(row.chunkNum ?? 0) > 0;
+  reparseApplyKb.value = false;
+  reparseVisible.value = true;
+}
+
+async function handleConfirmReparse() {
+  if (!reparseTarget.value) return;
+  reparseLoading.value = true;
+  try {
+    await handleParseDocuments([reparseTarget.value.id], {
+      delete: showReparseDelete.value ? reparseDelete.value : false,
+      applyKb: showReparseApplyKb.value ? reparseApplyKb.value : false
+    });
+    reparseVisible.value = false;
+  } finally {
+    reparseLoading.value = false;
+  }
+}
+
+function handleRunActionClick(row: Api.Knowledge.Document) {
+  if (isDocumentRunning(row)) {
+    handleStopDocuments([row.id]);
+    return;
+  }
+
+  const needConfirm = Number(row.chunkNum ?? 0) > 0 || Boolean((row.parserConfig as any)?.enable_metadata);
+  if (needConfirm) {
+    openReparseModal(row);
+  } else {
+    handleParseDocuments([row.id]);
+  }
 }
 
 async function handleUpdateDocumentStatus(docIds: string[], status: 0 | 1) {
@@ -626,13 +697,22 @@ async function handleSubmitRenameDocument() {
   }
 }
 
-function handlePreviewDocument(row: Api.Knowledge.Document) {
-  const runText = getRunStatusText(row.run);
-  const parseText = getParseMethodText(row);
-  window.$dialog?.info({
-    title: '文件详情',
-    content: `名称：${row.name}\n解析：${parseText}\n状态：${runText}\n分块：${row.chunkNum || 0}\n更新时间：${formatDate(row.updateTime)}`
-  });
+async function handlePreviewDocument(row: Api.Knowledge.Document) {
+  if (!activeKnowledgeBase.value) return;
+  try {
+    const { blob } = await fetchPreviewDocument(activeKnowledgeBase.value.id, row.id);
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  } catch (error) {
+    window.$message?.error(error instanceof Error ? error.message : '预览失败');
+  }
 }
 
 function getFileExt(name: string) {
@@ -710,6 +790,31 @@ function handleUploadSubmitted() {
   loadKnowledgeBaseList();
 }
 
+function handleOpenFilterPopover(show: boolean) {
+  docFilterPopoverVisible.value = show;
+  if (show) {
+    pendingRunFilters.value = [...selectedRunFilters.value];
+    pendingSuffixFilters.value = [...selectedSuffixFilters.value];
+    loadDocumentFilters();
+  }
+}
+
+function applyDocumentFilters() {
+  selectedRunFilters.value = [...pendingRunFilters.value];
+  selectedSuffixFilters.value = [...pendingSuffixFilters.value];
+  docFilterPopoverVisible.value = false;
+  loadDocuments(true);
+}
+
+function resetDocumentFilters() {
+  pendingRunFilters.value = [];
+  pendingSuffixFilters.value = [];
+  selectedRunFilters.value = [];
+  selectedSuffixFilters.value = [];
+  docFilterPopoverVisible.value = false;
+  loadDocuments(true);
+}
+
 onMounted(async () => {
   await Promise.all([loadAiReadiness(), loadKnowledgeBaseList(true)]);
 });
@@ -768,11 +873,7 @@ onMounted(async () => {
             <div class="knowledge-card__content">
               <div class="knowledge-card__top">
                 <h3 class="knowledge-card__title">{{ item.name }}</h3>
-                <NDropdown
-                  trigger="click"
-                  :options="getCardMenuOptions()"
-                  @select="key => handleCardMenuSelect(String(key), item)"
-                >
+                <NDropdown trigger="click" :options="getCardMenuOptions()" @select="key => handleCardMenuSelect(String(key), item)">
                   <NButton text class="knowledge-card__more" @click.stop>
                     <icon-mdi-dots-horizontal />
                   </NButton>
@@ -840,15 +941,73 @@ onMounted(async () => {
             <header class="knowledge-detail__toolbar">
               <div>
                 <h3 class="knowledge-detail__main-title">文件列表</h3>
-                <p class="knowledge-detail__main-desc">解析成功后才能问答哦。</p>
+                <p class="knowledge-detail__main-desc">解析成功后才能问答。</p>
               </div>
               <div class="knowledge-detail__toolbar-actions">
+                <NButton quaternary circle disabled>
+                  <template #icon>
+                    <icon-carbon-magic-wand />
+                  </template>
+                </NButton>
+                <NPopover
+                  trigger="click"
+                  placement="bottom-end"
+                  :show="docFilterPopoverVisible"
+                  @update:show="handleOpenFilterPopover"
+                >
+                  <template #trigger>
+                    <NButton quaternary circle :type="hasDocumentFilter ? 'primary' : 'default'">
+                      <template #icon>
+                        <icon-mdi-filter-outline />
+                      </template>
+                    </NButton>
+                  </template>
+                  <div class="doc-filter-panel">
+                    <NSpin :show="docFilterLoading">
+                      <div class="doc-filter-section">
+                        <p class="doc-filter-title">解析状态</p>
+                        <NCheckboxGroup v-model:value="pendingRunFilters">
+                          <NSpace vertical size="small">
+                            <NCheckbox
+                              v-for="item in runFilterOptions"
+                              :key="item.key"
+                              :value="item.key"
+                              :label="item.label"
+                            />
+                          </NSpace>
+                        </NCheckboxGroup>
+                      </div>
+                      <div class="doc-filter-section">
+                        <p class="doc-filter-title">文件后缀</p>
+                        <NCheckboxGroup v-model:value="pendingSuffixFilters">
+                          <NSpace vertical size="small">
+                            <NCheckbox
+                              v-for="item in suffixFilterOptions"
+                              :key="item.key"
+                              :value="item.key"
+                              :label="item.label"
+                            />
+                          </NSpace>
+                        </NCheckboxGroup>
+                      </div>
+                    </NSpin>
+                    <div class="doc-filter-actions">
+                      <NButton text @click="resetDocumentFilters">重置</NButton>
+                      <NButton type="primary" size="small" @click="applyDocumentFilters">应用</NButton>
+                    </div>
+                  </div>
+                </NPopover>
                 <NInput
                   v-model:value="docsKeywords"
                   clearable
                   class="knowledge-detail__search"
                   placeholder="搜索"
-                  @keyup.enter="loadDocuments(true)"
+                  @keyup.enter="
+                    () => {
+                      loadDocumentFilters();
+                      loadDocuments(true);
+                    }
+                  "
                 >
                   <template #prefix>
                     <icon-ic-round-search class="text-icon" />
@@ -906,23 +1065,13 @@ onMounted(async () => {
             :knowledge-base="activeKnowledgeBase"
             :documents="docs"
           />
-          <KnowledgeLogPanel
-            v-else-if="activeDetailTab === 'log'"
-            :knowledge-base="activeKnowledgeBase"
-          />
-          <KnowledgeConfigPanel
-            v-else
-            :knowledge-base="activeKnowledgeBase"
-          />
+          <KnowledgeLogPanel v-else-if="activeDetailTab === 'log'" :knowledge-base="activeKnowledgeBase" />
+          <KnowledgeConfigPanel v-else :knowledge-base="activeKnowledgeBase" />
         </main>
       </section>
     </template>
 
-    <KnowledgeOperateModal
-      v-model:visible="createVisible"
-      operate-type="add"
-      @submitted="handleCreateSubmitted"
-    />
+    <KnowledgeOperateModal v-model:visible="createVisible" operate-type="add" @submitted="handleCreateSubmitted" />
 
     <KnowledgeUploadModal
       v-model:visible="uploadVisible"
@@ -981,6 +1130,26 @@ onMounted(async () => {
         <NSpace justify="end">
           <NButton @click="renameDocumentVisible = false">取消</NButton>
           <NButton type="primary" :loading="renamingDocumentLoading" @click="handleSubmitRenameDocument">保存</NButton>
+        </NSpace>
+      </template>
+    </NModal>
+
+    <NModal v-model:show="reparseVisible" preset="card" title="解析文件" class="w-520px max-w-90vw" :bordered="false">
+      <div class="reparse-content">
+        <p class="reparse-tip">可选择是否重置已有分块，或应用知识库的自动元数据配置。</p>
+        <div v-if="showReparseDelete" class="reparse-option">
+          <NCheckbox v-model:checked="reparseDelete">
+            重做已有分块（{{ reparseTarget?.chunkNum || 0 }} 个分块）
+          </NCheckbox>
+        </div>
+        <div v-if="showReparseApplyKb" class="reparse-option">
+          <NCheckbox v-model:checked="reparseApplyKb">应用知识库自动元数据设置</NCheckbox>
+        </div>
+      </div>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton @click="reparseVisible = false">取消</NButton>
+          <NButton type="primary" :loading="reparseLoading" @click="handleConfirmReparse">确认</NButton>
         </NSpace>
       </template>
     </NModal>
@@ -1244,6 +1413,48 @@ onMounted(async () => {
   min-height: 360px;
 }
 
+.doc-filter-panel {
+  width: 320px;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.doc-filter-section {
+  padding: 2px 2px 0;
+}
+
+.doc-filter-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.doc-filter-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.reparse-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reparse-tip {
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.reparse-option {
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
 :deep(.doc-parser-btn) {
   color: #6b7280;
 }
@@ -1303,3 +1514,4 @@ onMounted(async () => {
   }
 }
 </style>
+
