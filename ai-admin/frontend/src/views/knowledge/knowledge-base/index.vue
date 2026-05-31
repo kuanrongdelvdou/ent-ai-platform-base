@@ -1,5 +1,5 @@
 <script setup lang="tsx">
-import { computed, h, onMounted, ref } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { DataTableColumns, DropdownOption } from 'naive-ui';
 import { NButton, NDropdown, NPopconfirm, NPopover, NProgress, NSwitch } from 'naive-ui';
 import {
@@ -85,6 +85,11 @@ const reparseLoading = ref(false);
 const reparseTarget = ref<Api.Knowledge.Document | null>(null);
 const reparseDelete = ref(true);
 const reparseApplyKb = ref(false);
+const metadataVisible = ref(false);
+const metadataTarget = ref<Api.Knowledge.Document | null>(null);
+
+const DOC_LIST_POLL_INTERVAL = 5000;
+let docsPollingTimer: number | null = null;
 
 const statusOptions: Array<{ label: string; key: 'all' | '1' | '2' }> = [
   { label: '全部', key: 'all' },
@@ -223,7 +228,20 @@ const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() =>
     key: 'name',
     title: '名称',
     minWidth: 260,
-    ellipsis: { tooltip: true }
+    ellipsis: { tooltip: true },
+    render: row =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'doc-name-btn',
+          onClick: () => handlePreviewDocument(row)
+        },
+        [
+          h(SvgIcon, { icon: 'lucide:file-text', class: 'doc-name-icon' }),
+          h('span', { class: 'doc-name-text' }, row.name)
+        ]
+      )
   },
   {
     key: 'createTime',
@@ -256,7 +274,17 @@ const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() =>
     title: '元数据',
     width: 120,
     align: 'center',
-    render: row => `${getDocumentMetaFieldCount(row)} fields`
+    render: row =>
+      h(
+        NButton,
+        {
+          text: true,
+          size: 'small',
+          class: 'doc-meta-btn',
+          onClick: () => handleOpenMetadata(row)
+        },
+        { default: () => `${getDocumentMetaFieldCount(row)} fields` }
+      )
   },
   {
     key: 'parser',
@@ -269,7 +297,7 @@ const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() =>
         {
           trigger: 'click',
           options: parseMethodOptions,
-          disabled: !hasAuth('knowledge:edit'),
+          disabled: !hasAuth('knowledge:edit') || isDocumentRunning(row),
           onSelect: key => handleChangeDocumentParseMethod(row, String(key))
         },
         {
@@ -381,7 +409,7 @@ const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() =>
           {
             text: true,
             size: 'small',
-            disabled: isDocumentRunning(row),
+            disabled: isDocumentRunning(row) || isVirtualDocument(row),
             onClick: () => handlePreviewDocument(row)
           },
           { icon: () => h(SvgIcon, { icon: 'lucide:eye' }) }
@@ -391,7 +419,7 @@ const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() =>
           {
             text: true,
             size: 'small',
-            disabled: isDocumentRunning(row),
+            disabled: isDocumentRunning(row) || isVirtualDocument(row),
             onClick: () => handleDownloadDocument(row)
           },
           { icon: () => h(SvgIcon, { icon: 'lucide:download' }) }
@@ -476,8 +504,19 @@ function getProcessDurationText(row: Api.Knowledge.Document) {
   return `${value.toFixed(2)} s`;
 }
 
+function normalizeProgressMessage(value: unknown) {
+  if (Array.isArray(value)) {
+    return value
+      .map(item => String(item ?? '').trim())
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
 function renderRunLogPopover(row: Api.Knowledge.Document) {
-  const message = String((row as any).progressMsg ?? (row as any).progress_msg ?? '-').trim() || '-';
+  const message = normalizeProgressMessage((row as any).progressMsg ?? (row as any).progress_msg) || '-';
   const statusText = getRunStatusText(row.run);
   const beginTime = formatDate((row as any).processBeginAt ?? (row as any).process_begin_at ?? row.createTime);
 
@@ -508,6 +547,10 @@ function getProgressPercent(progress?: number) {
 function isDocumentRunning(row: Api.Knowledge.Document) {
   const state = getRunState(row.run);
   return state === 'RUNNING' || state === 'SCHEDULE';
+}
+
+function isVirtualDocument(row: Api.Knowledge.Document) {
+  return String(row.type ?? '').toLowerCase() === 'virtual';
 }
 
 function getDocumentEnabled(row: Api.Knowledge.Document) {
@@ -872,6 +915,32 @@ async function handleDeleteDocuments(ids: string[]) {
   await Promise.all([loadDocuments(), loadKnowledgeBaseList()]);
 }
 
+function handleOpenMetadata(row: Api.Knowledge.Document) {
+  metadataTarget.value = row;
+  metadataVisible.value = true;
+}
+
+function hasRunningDocuments() {
+  return docs.value.some(item => isDocumentRunning(item));
+}
+
+function clearDocsPollingTimer() {
+  if (docsPollingTimer !== null) {
+    window.clearInterval(docsPollingTimer);
+    docsPollingTimer = null;
+  }
+}
+
+function setupDocsPolling() {
+  clearDocsPollingTimer();
+  if (!activeKnowledgeBase.value || activeDetailTab.value !== 'file' || !hasRunningDocuments()) return;
+  docsPollingTimer = window.setInterval(() => {
+    if (!docsLoading.value) {
+      void loadDocuments(false);
+    }
+  }, DOC_LIST_POLL_INTERVAL);
+}
+
 function handleDetailTabChange(tab: DetailTab) {
   activeDetailTab.value = tab;
 }
@@ -969,6 +1038,21 @@ function handleUpdatePendingMetadata(field: string, values: Array<string | numbe
 
 onMounted(async () => {
   await Promise.all([loadAiReadiness(), loadKnowledgeBaseList(true)]);
+});
+
+watch(
+  () => [
+    activeKnowledgeBase.value?.id ?? '',
+    activeDetailTab.value,
+    docs.value.map(item => `${item.id}:${getRunState(item.run)}`).join('|')
+  ],
+  () => {
+    setupDocsPolling();
+  }
+);
+
+onBeforeUnmount(() => {
+  clearDocsPollingTimer();
 });
 </script>
 
@@ -1218,6 +1302,7 @@ onMounted(async () => {
               :columns="documentColumns"
               :data="docs"
               :row-key="row => row.id"
+              :row-class-name="() => 'knowledge-doc-row'"
               size="small"
               remote
               :scroll-x="1280"
@@ -1327,6 +1412,18 @@ onMounted(async () => {
         <NSpace justify="end">
           <NButton @click="reparseVisible = false">取消</NButton>
           <NButton type="primary" :loading="reparseLoading" @click="handleConfirmReparse">确认</NButton>
+        </NSpace>
+      </template>
+    </NModal>
+
+    <NModal v-model:show="metadataVisible" preset="card" title="元数据" class="w-680px max-w-92vw" :bordered="false">
+      <div class="doc-meta-detail">
+        <p class="doc-meta-detail__title">{{ metadataTarget?.name || '-' }}</p>
+        <pre class="doc-meta-detail__content">{{ JSON.stringify(metadataTarget?.metaFields ?? {}, null, 2) }}</pre>
+      </div>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton @click="metadataVisible = false">关闭</NButton>
         </NSpace>
       </template>
     </NModal>
@@ -1743,6 +1840,69 @@ onMounted(async () => {
 :deep(.doc-actions) {
   display: inline-flex;
   gap: 4px;
+}
+
+:deep(.knowledge-doc-row .doc-actions) {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+:deep(.knowledge-doc-row:hover .doc-actions),
+:deep(.knowledge-doc-row:focus-within .doc-actions) {
+  opacity: 1;
+}
+
+:deep(.doc-name-btn) {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+:deep(.doc-name-icon) {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+:deep(.doc-name-text) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:deep(.doc-meta-btn) {
+  color: #4b5563;
+}
+
+.doc-meta-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.doc-meta-detail__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.doc-meta-detail__content {
+  max-height: 420px;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 @media (max-width: 1280px) {
