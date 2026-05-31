@@ -155,6 +155,20 @@ export class DocumentListDto {
   run?: string[];
 
   @IsOptional()
+  @Transform(({ value, obj }) => {
+    const source = value ?? obj?.run;
+    if (source === undefined || source === null || source === '') return undefined;
+    if (Array.isArray(source)) return source;
+    return String(source)
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean);
+  })
+  @IsArray()
+  @IsString({ each: true })
+  run_status?: string[];
+
+  @IsOptional()
   @Transform(({ value }) => {
     if (value === undefined || value === null || value === '') return undefined;
     if (Array.isArray(value)) return value;
@@ -166,6 +180,32 @@ export class DocumentListDto {
   @IsArray()
   @IsString({ each: true })
   suffix?: string[];
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (typeof value === 'object' && !Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : undefined;
+      } catch {
+        return value;
+      }
+    }
+    return undefined;
+  })
+  @IsObject()
+  metadata?: Record<string, string[]>;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (typeof value === 'boolean') return value;
+    return String(value).toLowerCase() === 'true';
+  })
+  @IsBoolean()
+  return_empty_metadata?: boolean;
 }
 
 export class DocumentFilterDto {

@@ -5,7 +5,16 @@ import { AppLoggerService } from '../common/logger/app-logger.service';
 type RequestOptions = {
   method?: string;
   body?: unknown;
-  params?: Record<string, string | number | boolean | Array<string | number | boolean> | undefined | null>;
+  params?: Record<
+    string,
+    | string
+    | number
+    | boolean
+    | Array<string | number | boolean>
+    | Record<string, unknown>
+    | undefined
+    | null
+  >;
   prefix?: '/api/v1' | '/v1';
 };
 
@@ -47,6 +56,10 @@ export class RagflowApiService {
           value
             .filter(item => item !== undefined && item !== null && String(item) !== '')
             .forEach(item => searchParams.append(key, String(item)));
+          continue;
+        }
+        if (typeof value === 'object') {
+          searchParams.set(key, JSON.stringify(value));
           continue;
         }
         searchParams.set(key, String(value));
@@ -142,11 +155,26 @@ export class RagflowApiService {
       page_size?: number;
       keywords?: string;
       run?: string[];
+      run_status?: string[];
       suffix?: string[];
       type?: string;
+      metadata?: Record<string, string[]>;
+      return_empty_metadata?: boolean;
     },
   ) {
-    return this.request<Record<string, unknown>>(`/datasets/${datasetId}/documents`, { params });
+    const normalizedRun = params.run_status?.length ? params.run_status : params.run;
+    return this.request<Record<string, unknown>>(`/datasets/${datasetId}/documents`, {
+      params: {
+        page: params.page,
+        page_size: params.page_size,
+        keywords: params.keywords,
+        run: normalizedRun,
+        suffix: params.suffix,
+        type: params.type,
+        metadata: params.metadata,
+        return_empty_metadata: params.return_empty_metadata,
+      },
+    });
   }
 
   async ingestDocuments(data: {

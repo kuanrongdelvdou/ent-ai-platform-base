@@ -112,9 +112,15 @@ declare namespace Api {
       datasetId?: string;
       type?: string;
       size?: number;
+      suffix?: string;
+      nickname?: string;
       chunkNum?: number;
       tokenNum?: number;
       progress?: number;
+      progressMsg?: string;
+      processBeginAt?: string;
+      processDuration?: number;
+      createDate?: string;
       run?: string;
       status?: string;
       chunkMethod?: string | null;
@@ -133,6 +139,8 @@ declare namespace Api {
       keywords?: string;
       run?: string[];
       suffix?: string[];
+      metadata?: Record<string, string[]>;
+      return_empty_metadata?: boolean;
     }>;
 
     type DocumentList = Common.PaginatingQueryRecord<Document>;
@@ -142,7 +150,7 @@ declare namespace Api {
       filter?: {
         run_status?: Record<string, number>;
         suffix?: Record<string, number>;
-        metadata?: Record<string, number>;
+        metadata?: Record<string, Record<string, number>>;
       };
     };
 

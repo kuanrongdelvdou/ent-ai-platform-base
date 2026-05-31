@@ -50,7 +50,9 @@ export function fetchGetDocumentList(kbId: string, params?: Api.Knowledge.Docume
       page_size: params?.size,
       keywords: params?.keywords,
       run: params?.run,
-      suffix: params?.suffix
+      suffix: params?.suffix,
+      metadata: params?.metadata ? JSON.stringify(params.metadata) : undefined,
+      return_empty_metadata: params?.return_empty_metadata
     }
   });
 }

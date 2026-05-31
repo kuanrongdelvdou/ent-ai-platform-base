@@ -1,7 +1,7 @@
 <script setup lang="tsx">
 import { computed, h, onMounted, ref } from 'vue';
 import type { DataTableColumns, DropdownOption } from 'naive-ui';
-import { NButton, NDropdown, NPopconfirm, NProgress, NSwitch } from 'naive-ui';
+import { NButton, NDropdown, NPopconfirm, NPopover, NProgress, NSwitch } from 'naive-ui';
 import {
   fetchCreateEmptyDocument,
   fetchDeleteDocuments,
@@ -26,6 +26,7 @@ import KnowledgeSearchPanel from './modules/knowledge-search-panel.vue';
 import KnowledgeUploadModal from './modules/knowledge-upload-modal.vue';
 
 type DetailTab = 'file' | 'search' | 'log' | 'config';
+const EMPTY_METADATA_FIELD = 'empty_metadata';
 
 const { hasAuth } = useAuth();
 
@@ -57,6 +58,10 @@ const selectedRunFilters = ref<string[]>([]);
 const selectedSuffixFilters = ref<string[]>([]);
 const pendingRunFilters = ref<string[]>([]);
 const pendingSuffixFilters = ref<string[]>([]);
+const selectedMetadataFilters = ref<Record<string, string[]>>({});
+const pendingMetadataFilters = ref<Record<string, string[]>>({});
+const includeEmptyMetadata = ref(false);
+const pendingIncludeEmptyMetadata = ref(false);
 const docFilterPopoverVisible = ref(false);
 
 const createVisible = ref(false);
@@ -121,6 +126,15 @@ const runStateTextMap: Record<string, string> = {
   SCHEDULE: '排队中'
 };
 
+const runStateColorMap: Record<string, string> = {
+  UNSTART: 'var(--n-primary-color)',
+  RUNNING: '#14b8a6',
+  CANCEL: '#f59e0b',
+  DONE: '#22c55e',
+  FAIL: '#ef4444',
+  SCHEDULE: '#14b8a6'
+};
+
 const parseMethodOptions: DropdownOption[] = Object.entries(parseMethodLabelMap).map(([key, label]) => ({
   key,
   label
@@ -132,15 +146,30 @@ const addFileOptions: DropdownOption[] = [
 ];
 
 const uploadLimitTip =
-  '支持单次或批量上传。本地部署的单次上传总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。';
+  '支持单次或批量上传。本地部署的单次上传文件总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。对于 cloud.ragflow.io：每次上传的总文件大小限制为 10MB，每个文件不得超过 10MB，每个账户最多可上传 128 个文件。严禁上传违禁文件。';
 
 const canCreateKnowledgeBase = computed(
   () => hasAuth('knowledge:add') && aiReadiness.value?.status === 'READY'
 );
 
-const hasDocumentFilter = computed(
-  () => selectedRunFilters.value.length > 0 || selectedSuffixFilters.value.length > 0
-);
+function hasMetadataFilterValue(source: Record<string, string[]>) {
+  return Object.values(source).some(values => Array.isArray(values) && values.length > 0);
+}
+
+function cloneMetadataFilters(source: Record<string, string[]>) {
+  return Object.fromEntries(
+    Object.entries(source).map(([field, values]) => [field, Array.isArray(values) ? [...values] : []])
+  );
+}
+
+const hasDocumentFilter = computed(() => {
+  return (
+    selectedRunFilters.value.length > 0 ||
+    selectedSuffixFilters.value.length > 0 ||
+    includeEmptyMetadata.value ||
+    hasMetadataFilterValue(selectedMetadataFilters.value)
+  );
+});
 
 const runFilterOptions = computed(() => {
   const source = docFilter.value?.run_status ?? {};
@@ -156,6 +185,29 @@ const suffixFilterOptions = computed(() => {
     key,
     label: `${key} (${count})`
   }));
+});
+
+const metadataFilterOptions = computed(() => {
+  const source = docFilter.value?.metadata ?? {};
+  return Object.entries(source)
+    .filter(([field]) => field !== EMPTY_METADATA_FIELD)
+    .map(([field, valueMap]) => {
+      const entries = Object.entries(valueMap ?? {});
+      const totalCount = entries.reduce((sum, [, count]) => sum + Number(count || 0), 0);
+      return {
+        field,
+        totalCount,
+        options: entries.map(([value, count]) => ({
+          value,
+          label: `${value} (${count})`
+        }))
+      };
+    });
+});
+
+const emptyMetadataCount = computed(() => {
+  const source = docFilter.value?.metadata?.[EMPTY_METADATA_FIELD] as Record<string, number> | undefined;
+  return Number(source?.true ?? 0);
 });
 
 const showReparseDelete = computed(() => Number(reparseTarget.value?.chunkNum ?? 0) > 0);
@@ -237,33 +289,34 @@ const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() =>
   {
     key: 'runStatus',
     title: '',
-    width: 220,
+    width: 180,
     align: 'left',
     render: row => {
       const state = getRunState(row.run);
       const isRunning = state === 'RUNNING' || state === 'SCHEDULE';
       const percent = getProgressPercent(row.progress);
       const icon = getRunActionIcon(state);
+      const hasLog =
+        Boolean((row as any).progressMsg || (row as any).progress_msg) ||
+        Boolean((row as any).processBeginAt || (row as any).process_begin_at) ||
+        Number((row as any).processDuration ?? (row as any).process_duration ?? 0) > 0;
+      const dotStyle = {
+        backgroundColor: getRunStatusColor(row.run)
+      };
 
       return h('div', { class: 'doc-run-cell', 'data-state': state.toLowerCase() }, [
+        h('span', { class: 'doc-run-separator' }),
         isRunning
-          ? h(
-              NButton,
-              {
-                text: true,
-                class: 'doc-run-progress'
-              },
-              {
-                default: () =>
-                  h(NProgress, {
-                    percentage: percent,
-                    indicatorPlacement: 'inside',
-                    showIndicator: false,
-                    height: 6,
-                    borderRadius: 4
-                  })
-              }
-            )
+          ? h('div', { class: 'doc-run-progress' }, [
+              h(NProgress, {
+                percentage: percent,
+                indicatorPlacement: 'inside',
+                showIndicator: false,
+                height: 6,
+                borderRadius: 4
+              }),
+              h('span', { class: 'doc-run-progress-text' }, `${percent}%`)
+            ])
           : null,
         h(
           NButton,
@@ -279,7 +332,30 @@ const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() =>
             default: () => (isRunning ? '停止' : '')
           }
         ),
-        h('span', { class: 'doc-run-text' }, getRunStatusText(row.run))
+        h(
+          NPopover,
+          {
+            trigger: 'hover',
+            placement: 'left',
+            disabled: !hasLog
+          },
+          {
+            trigger: () =>
+              h(
+                NButton,
+                {
+                  text: true,
+                  size: 'small',
+                  class: 'doc-run-dot-btn',
+                  disabled: !hasLog
+                },
+                {
+                  default: () => h('span', { class: 'doc-run-dot', style: dotStyle })
+                }
+              ),
+            default: () => renderRunLogPopover(row)
+          }
+        )
       ]);
     }
   },
@@ -383,10 +459,43 @@ function getRunStatusText(run?: string) {
   return runStateTextMap[getRunState(run)] || '待解析';
 }
 
+function getRunStatusColor(run?: string) {
+  const state = getRunState(run);
+  return runStateColorMap[state] || 'var(--n-primary-color)';
+}
+
 function getRunActionIcon(state: string) {
   if (state === 'RUNNING' || state === 'SCHEDULE') return 'lucide:circle-x';
   if (state === 'UNSTART') return 'lucide:play';
   return 'lucide:rotate-cw';
+}
+
+function getProcessDurationText(row: Api.Knowledge.Document) {
+  const value = Number((row as any).processDuration ?? (row as any).process_duration ?? 0);
+  if (!Number.isFinite(value) || value <= 0) return '-';
+  return `${value.toFixed(2)} s`;
+}
+
+function renderRunLogPopover(row: Api.Knowledge.Document) {
+  const message = String((row as any).progressMsg ?? (row as any).progress_msg ?? '-').trim() || '-';
+  const statusText = getRunStatusText(row.run);
+  const beginTime = formatDate((row as any).processBeginAt ?? (row as any).process_begin_at ?? row.createTime);
+
+  return h('section', { class: 'doc-log-popover' }, [
+    h('div', { class: 'doc-log-popover__status' }, [
+      h('span', {
+        class: 'doc-log-popover__dot',
+        style: { backgroundColor: getRunStatusColor(row.run) }
+      }),
+      h('span', null, statusText)
+    ]),
+    h('div', { class: 'doc-log-popover__line' }, [h('b', null, '开始时间:'), h('span', null, beginTime)]),
+    h('div', { class: 'doc-log-popover__line' }, [h('b', null, '耗时:'), h('span', null, getProcessDurationText(row))]),
+    h('div', { class: 'doc-log-popover__line doc-log-popover__line--block' }, [
+      h('b', null, '日志:'),
+      h('pre', { class: 'doc-log-popover__message' }, message)
+    ])
+  ]);
 }
 
 function getProgressPercent(progress?: number) {
@@ -437,9 +546,15 @@ function normalizeDocument(document: any): Api.Knowledge.Document {
     datasetId: document?.datasetId ?? document?.dataset_id ?? undefined,
     type: document?.type ?? undefined,
     size: typeof document?.size === 'number' ? document.size : undefined,
+    suffix: document?.suffix ?? undefined,
+    nickname: document?.nickname ?? undefined,
     chunkNum: Number(document?.chunkNum ?? document?.chunk_num ?? document?.chunk_count ?? 0),
     tokenNum: Number(document?.tokenNum ?? document?.token_num ?? document?.token_count ?? 0),
     progress: typeof document?.progress === 'number' ? document.progress : Number(document?.progress ?? 0),
+    progressMsg: document?.progressMsg ?? document?.progress_msg ?? '',
+    processBeginAt: document?.processBeginAt ?? document?.process_begin_at ?? '',
+    processDuration: Number(document?.processDuration ?? document?.process_duration ?? document?.process_duation ?? 0),
+    createDate: document?.createDate ?? document?.create_date ?? '',
     run: runValue,
     status: String(document?.status ?? '1'),
     pipelineId: document?.pipelineId ?? document?.pipeline_id ?? null,
@@ -456,6 +571,11 @@ function normalizeDocument(document: any): Api.Knowledge.Document {
   (normalized as any).pipeline_id = document?.pipelineId ?? document?.pipeline_id ?? null;
   (normalized as any).pipeline_name = document?.pipelineName ?? document?.pipeline_name ?? null;
   (normalized as any).meta_fields = document?.metaFields ?? document?.meta_fields ?? {};
+  (normalized as any).progress_msg = document?.progressMsg ?? document?.progress_msg ?? '';
+  (normalized as any).process_begin_at = document?.processBeginAt ?? document?.process_begin_at ?? '';
+  (normalized as any).process_duration = Number(
+    document?.processDuration ?? document?.process_duration ?? document?.process_duation ?? 0
+  );
 
   return normalized;
 }
@@ -516,7 +636,9 @@ async function loadDocuments(resetPage = false) {
       size: docsPageSize.value,
       keywords: docsKeywords.value || undefined,
       run: selectedRunFilters.value.length ? selectedRunFilters.value : undefined,
-      suffix: selectedSuffixFilters.value.length ? selectedSuffixFilters.value : undefined
+      suffix: selectedSuffixFilters.value.length ? selectedSuffixFilters.value : undefined,
+      metadata: hasMetadataFilterValue(selectedMetadataFilters.value) ? selectedMetadataFilters.value : undefined,
+      return_empty_metadata: includeEmptyMetadata.value || undefined
     });
     if (error || !data) return;
 
@@ -554,6 +676,10 @@ async function handleEnterKnowledgeBase(item: Api.Knowledge.KnowledgeBase) {
   selectedSuffixFilters.value = [];
   pendingRunFilters.value = [];
   pendingSuffixFilters.value = [];
+  selectedMetadataFilters.value = {};
+  pendingMetadataFilters.value = {};
+  includeEmptyMetadata.value = false;
+  pendingIncludeEmptyMetadata.value = false;
   await Promise.all([loadDocumentFilters(), loadDocuments(true)]);
 }
 
@@ -795,6 +921,8 @@ function handleOpenFilterPopover(show: boolean) {
   if (show) {
     pendingRunFilters.value = [...selectedRunFilters.value];
     pendingSuffixFilters.value = [...selectedSuffixFilters.value];
+    pendingMetadataFilters.value = cloneMetadataFilters(selectedMetadataFilters.value);
+    pendingIncludeEmptyMetadata.value = includeEmptyMetadata.value;
     loadDocumentFilters();
   }
 }
@@ -802,6 +930,8 @@ function handleOpenFilterPopover(show: boolean) {
 function applyDocumentFilters() {
   selectedRunFilters.value = [...pendingRunFilters.value];
   selectedSuffixFilters.value = [...pendingSuffixFilters.value];
+  selectedMetadataFilters.value = cloneMetadataFilters(pendingMetadataFilters.value);
+  includeEmptyMetadata.value = pendingIncludeEmptyMetadata.value;
   docFilterPopoverVisible.value = false;
   loadDocuments(true);
 }
@@ -809,10 +939,32 @@ function applyDocumentFilters() {
 function resetDocumentFilters() {
   pendingRunFilters.value = [];
   pendingSuffixFilters.value = [];
+  pendingMetadataFilters.value = {};
+  pendingIncludeEmptyMetadata.value = false;
   selectedRunFilters.value = [];
   selectedSuffixFilters.value = [];
+  selectedMetadataFilters.value = {};
+  includeEmptyMetadata.value = false;
   docFilterPopoverVisible.value = false;
   loadDocuments(true);
+}
+
+function getPendingMetadataValues(field: string) {
+  return pendingMetadataFilters.value[field] ?? [];
+}
+
+function handleUpdatePendingMetadata(field: string, values: Array<string | number> | null | undefined) {
+  const nextValues = (values ?? []).map(item => String(item));
+  if (nextValues.length === 0) {
+    const next = { ...pendingMetadataFilters.value };
+    delete next[field];
+    pendingMetadataFilters.value = next;
+    return;
+  }
+  pendingMetadataFilters.value = {
+    ...pendingMetadataFilters.value,
+    [field]: nextValues
+  };
 }
 
 onMounted(async () => {
@@ -976,6 +1128,11 @@ onMounted(async () => {
                             />
                           </NSpace>
                         </NCheckboxGroup>
+                        <div v-if="emptyMetadataCount > 0" class="doc-filter-empty-meta">
+                          <NCheckbox v-model:checked="pendingIncludeEmptyMetadata">
+                            空元数据 ({{ emptyMetadataCount }})
+                          </NCheckbox>
+                        </div>
                       </div>
                       <div class="doc-filter-section">
                         <p class="doc-filter-title">文件后缀</p>
@@ -985,6 +1142,26 @@ onMounted(async () => {
                               v-for="item in suffixFilterOptions"
                               :key="item.key"
                               :value="item.key"
+                              :label="item.label"
+                            />
+                          </NSpace>
+                        </NCheckboxGroup>
+                      </div>
+                      <div
+                        v-for="metaField in metadataFilterOptions"
+                        :key="metaField.field"
+                        class="doc-filter-section"
+                      >
+                        <p class="doc-filter-title">{{ metaField.field }} ({{ metaField.totalCount }})</p>
+                        <NCheckboxGroup
+                          :value="getPendingMetadataValues(metaField.field)"
+                          @update:value="values => handleUpdatePendingMetadata(metaField.field, values)"
+                        >
+                          <NSpace vertical size="small">
+                            <NCheckbox
+                              v-for="item in metaField.options"
+                              :key="item.value"
+                              :value="item.value"
                               :label="item.label"
                             />
                           </NSpace>
@@ -1431,6 +1608,10 @@ onMounted(async () => {
   color: #6b7280;
 }
 
+.doc-filter-empty-meta {
+  margin-top: 10px;
+}
+
 .doc-filter-actions {
   display: flex;
   justify-content: space-between;
@@ -1463,12 +1644,25 @@ onMounted(async () => {
   min-height: 26px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+
+:deep(.doc-run-separator) {
+  width: 1px;
+  height: 14px;
+  background: #d1d5db;
 }
 
 :deep(.doc-run-progress) {
-  width: 74px;
-  padding: 0;
+  min-width: 82px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+:deep(.doc-run-progress-text) {
+  color: #6b7280;
+  font-size: 12px;
 }
 
 :deep(.doc-run-action) {
@@ -1484,9 +1678,66 @@ onMounted(async () => {
   color: #ef4444;
 }
 
-:deep(.doc-run-text) {
-  color: #6b7280;
+:deep(.doc-run-dot-btn) {
+  padding: 0;
+}
+
+:deep(.doc-run-dot) {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  display: inline-block;
+}
+
+:deep(.doc-log-popover) {
+  width: 320px;
+  max-width: 40vw;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  white-space: normal;
+}
+
+:deep(.doc-log-popover__status) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+:deep(.doc-log-popover__dot) {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  display: inline-block;
+}
+
+:deep(.doc-log-popover__line) {
+  display: flex;
+  gap: 6px;
   font-size: 12px;
+  color: #4b5563;
+}
+
+:deep(.doc-log-popover__line--block) {
+  flex-direction: column;
+  gap: 4px;
+}
+
+:deep(.doc-log-popover__message) {
+  max-height: 160px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #111827;
+  font-family: inherit;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
 }
 
 :deep(.doc-actions) {
@@ -1514,4 +1765,3 @@ onMounted(async () => {
   }
 }
 </style>
-

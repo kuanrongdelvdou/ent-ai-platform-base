@@ -241,7 +241,15 @@ export class KnowledgeService {
 
   async getDocumentList(kbId: string, dto: DocumentListDto, user: CurrentUserRef) {
     const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
-    const result = await this.ragflow.listDocuments(kb.datasetId!, dto);
+    const result = await this.ragflow.listDocuments(kb.datasetId!, {
+      page: dto.page,
+      page_size: dto.page_size,
+      keywords: dto.keywords,
+      run_status: dto.run_status?.length ? dto.run_status : dto.run,
+      suffix: dto.suffix,
+      metadata: dto.metadata,
+      return_empty_metadata: dto.return_empty_metadata,
+    });
     if (!result.success) throw new BadRequestException(`获取文档列表失败：${result.error}`);
     return this.normalizeRagflowList(result.data, kb.chunkMethod ?? 'naive');
   }
@@ -455,6 +463,13 @@ export class KnowledgeService {
 
     const pipelineId = String(item.pipeline_id ?? item.pipelineId ?? '').trim() || null;
     const pipelineName = String(item.pipeline_name ?? item.pipelineName ?? '').trim() || null;
+    const processDurationRaw = Number(item.process_duration ?? item.process_duation ?? 0);
+    const processDuration = Number.isFinite(processDurationRaw) ? processDurationRaw : 0;
+    const progressMsg = String(item.progress_msg ?? item.progressMsg ?? '').trim();
+    const suffix = String(item.suffix ?? '').trim();
+    const nickname = String(item.nickname ?? '').trim();
+    const createDate = String(item.create_date ?? item.createDate ?? '').trim();
+    const processBeginAt = String(item.process_begin_at ?? item.processBeginAt ?? '').trim();
 
     return {
       id: String(item.id ?? ''),
@@ -475,11 +490,20 @@ export class KnowledgeService {
       metaFields: (item.meta_fields ?? item.metaFields ?? {}) as Record<string, unknown>,
       createTime: String(item.create_time ?? item.created_at ?? item.createTime ?? ''),
       updateTime: String(item.update_time ?? item.updated_at ?? item.updateTime ?? ''),
+      createDate,
+      suffix,
+      nickname,
+      processBeginAt,
+      processDuration,
+      progressMsg,
       chunk_method: chunkMethod,
       pipeline_id: pipelineId,
       pipeline_name: pipelineName,
       meta_fields: (item.meta_fields ?? item.metaFields ?? {}) as Record<string, unknown>,
+      process_begin_at: processBeginAt,
+      process_duration: processDuration,
+      progress_msg: progressMsg,
+      create_date: createDate,
     };
   }
 }
-
