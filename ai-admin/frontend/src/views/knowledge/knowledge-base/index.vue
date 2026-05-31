@@ -1197,7 +1197,7 @@ onBeforeUnmount(() => {
                 </NDropdown>
               </div>
               <p class="knowledge-card__meta">{{ getDocumentCount(item) }} 个文件</p>
-              <p class="knowledge-card__time">{{ formatDate(item.updateTime) }}</p>
+              <p class="knowledge-card__time">{{ formatDate(item.createTime || item.updateTime) }}</p>
             </div>
           </article>
         </section>
