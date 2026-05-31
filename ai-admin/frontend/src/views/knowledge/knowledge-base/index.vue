@@ -673,6 +673,13 @@ async function loadKnowledgeBaseList(resetPage = false) {
     total.value = data.total || 0;
     page.value = data.current || page.value;
     pageSize.value = data.size || pageSize.value;
+
+    if (activeKnowledgeBase.value) {
+      const latest = list.value.find(item => item.id === activeKnowledgeBase.value?.id);
+      if (latest) {
+        activeKnowledgeBase.value = latest;
+      }
+    }
   } finally {
     listLoading.value = false;
   }

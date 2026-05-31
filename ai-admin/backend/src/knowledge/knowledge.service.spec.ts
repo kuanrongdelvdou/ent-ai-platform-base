@@ -237,4 +237,98 @@ describe('KnowledgeService', () => {
     expect(access.assertCanAccessKnowledgeBase).toHaveBeenCalledWith('kb-1', 'user-1');
     expect(ragflow.listDocuments).toHaveBeenCalledWith('dataset-1', { page: 1, page_size: 10 });
   });
+
+  it('normalizes document parser and run fields from RAGFlow list response', async () => {
+    const prisma = {};
+    const ragflow = {
+      listDocuments: jest.fn().mockResolvedValue({
+        success: true,
+        data: {
+          docs: [
+            {
+              id: 'doc-1',
+              name: '招商引资需求.xlsx',
+              dataset_id: 'dataset-1',
+              chunk_method: 'naive',
+              chunk_count: 3,
+              token_count: 42,
+              progress: 0.67,
+              run: 'RUNNING',
+              status: '1',
+              meta_fields: { source: 'excel' },
+              parser_config: { auto_keywords: 0 },
+              create_time: '1780223352463',
+              update_time: '1780223352463'
+            }
+          ],
+          total: 1
+        }
+      })
+    };
+    const access = {
+      assertCanAccessKnowledgeBase: jest.fn().mockResolvedValue({
+        id: 'kb-1',
+        datasetId: 'dataset-1',
+        chunkMethod: 'laws'
+      })
+    };
+    const service = new KnowledgeService(prisma as any, ragflow as any, access as any, {} as any);
+
+    const result = await service.getDocumentList('kb-1', { page: 1, page_size: 10 }, { userId: 'user-1' });
+
+    expect(result.total).toBe(1);
+    expect(result.records[0]).toEqual(
+      expect.objectContaining({
+        id: 'doc-1',
+        name: '招商引资需求.xlsx',
+        run: 'RUNNING',
+        chunkMethod: 'naive',
+        parseMethod: 'naive',
+        chunk_method: 'naive',
+        chunkNum: 3,
+        tokenNum: 42
+      })
+    );
+  });
+
+  it('falls back to knowledge base chunk method when document parser fields are missing', async () => {
+    const prisma = {};
+    const ragflow = {
+      listDocuments: jest.fn().mockResolvedValue({
+        success: true,
+        data: {
+          docs: [
+            {
+              id: 'doc-2',
+              name: '政策解读.docx',
+              dataset_id: 'dataset-1',
+              run: 'UNSTART',
+              status: '1'
+            }
+          ],
+          total: 1
+        }
+      })
+    };
+    const access = {
+      assertCanAccessKnowledgeBase: jest.fn().mockResolvedValue({
+        id: 'kb-1',
+        datasetId: 'dataset-1',
+        chunkMethod: 'presentation'
+      })
+    };
+    const service = new KnowledgeService(prisma as any, ragflow as any, access as any, {} as any);
+
+    const result = await service.getDocumentList('kb-1', { page: 1, page_size: 10 }, { userId: 'user-1' });
+
+    expect(result.records[0]).toEqual(
+      expect.objectContaining({
+        id: 'doc-2',
+        run: 'UNSTART',
+        chunkMethod: 'presentation',
+        parseMethod: 'presentation',
+        chunk_method: 'presentation'
+      })
+    );
+  });
 });
