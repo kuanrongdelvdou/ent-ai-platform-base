@@ -21,6 +21,7 @@ import { useAuth } from '@/hooks/business/auth';
 import SvgIcon from '@/components/custom/svg-icon.vue';
 import KnowledgeConfigPanel from './modules/knowledge-config-panel.vue';
 import KnowledgeLogPanel from './modules/knowledge-log-panel.vue';
+import KnowledgeMetadataModal from './modules/knowledge-metadata-modal.vue';
 import KnowledgeOperateModal from './modules/knowledge-operate-modal.vue';
 import KnowledgeSearchPanel from './modules/knowledge-search-panel.vue';
 import KnowledgeUploadModal from './modules/knowledge-upload-modal.vue';
@@ -86,7 +87,8 @@ const reparseTarget = ref<Api.Knowledge.Document | null>(null);
 const reparseDelete = ref(true);
 const reparseApplyKb = ref(false);
 const metadataVisible = ref(false);
-const metadataTarget = ref<Api.Knowledge.Document | null>(null);
+const metadataDocIds = ref<string[]>([]);
+const metadataDocName = ref('');
 
 const DOC_LIST_POLL_INTERVAL = 5000;
 let docsPollingTimer: number | null = null;
@@ -916,8 +918,20 @@ async function handleDeleteDocuments(ids: string[]) {
 }
 
 function handleOpenMetadata(row: Api.Knowledge.Document) {
-  metadataTarget.value = row;
+  metadataDocIds.value = [row.id];
+  metadataDocName.value = row.name;
   metadataVisible.value = true;
+}
+
+function handleOpenBatchMetadata() {
+  if (!checkedDocIds.value.length) return;
+  metadataDocIds.value = [...checkedDocIds.value];
+  metadataDocName.value = '';
+  metadataVisible.value = true;
+}
+
+async function handleMetadataSaved() {
+  await Promise.all([loadDocuments(), loadDocumentFilters()]);
 }
 
 function hasRunningDocuments() {
@@ -1286,6 +1300,9 @@ onBeforeUnmount(() => {
             </header>
 
             <section class="knowledge-detail__batch-actions">
+              <NButton :disabled="!checkedDocIds.length || !hasAuth('knowledge:edit')" @click="handleOpenBatchMetadata">
+                批量元数据
+              </NButton>
               <NButton :disabled="!checkedDocIds.length" @click="handleParseDocuments(checkedDocIds)">批量解析</NButton>
               <NButton :disabled="!checkedDocIds.length" @click="handleStopDocuments(checkedDocIds)">停止解析</NButton>
               <NPopconfirm :disabled="!checkedDocIds.length" @positive-click="handleDeleteDocuments(checkedDocIds)">
@@ -1416,17 +1433,13 @@ onBeforeUnmount(() => {
       </template>
     </NModal>
 
-    <NModal v-model:show="metadataVisible" preset="card" title="元数据" class="w-680px max-w-92vw" :bordered="false">
-      <div class="doc-meta-detail">
-        <p class="doc-meta-detail__title">{{ metadataTarget?.name || '-' }}</p>
-        <pre class="doc-meta-detail__content">{{ JSON.stringify(metadataTarget?.metaFields ?? {}, null, 2) }}</pre>
-      </div>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="metadataVisible = false">关闭</NButton>
-        </NSpace>
-      </template>
-    </NModal>
+    <KnowledgeMetadataModal
+      v-model:visible="metadataVisible"
+      :knowledge-base="activeKnowledgeBase"
+      :document-ids="metadataDocIds"
+      :document-name="metadataDocName"
+      @saved="handleMetadataSaved"
+    />
   </div>
 </template>
 
@@ -1877,32 +1890,6 @@ onBeforeUnmount(() => {
 
 :deep(.doc-meta-btn) {
   color: #4b5563;
-}
-
-.doc-meta-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.doc-meta-detail__title {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #111827;
-}
-
-.doc-meta-detail__content {
-  max-height: 420px;
-  margin: 0;
-  overflow: auto;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #f8fafc;
-  color: #111827;
-  font-size: 12px;
-  line-height: 1.5;
 }
 
 @media (max-width: 1280px) {

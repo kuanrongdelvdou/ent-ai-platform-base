@@ -225,5 +225,71 @@ declare namespace Api {
       total: number;
       logs: IngestionLogItem[];
     };
+
+    type MetadataValueType = 'string' | 'list' | 'time' | 'number' | string;
+
+    type MetadataSummaryValueItem = {
+      value: string;
+      count: number;
+    };
+
+    type MetadataSummaryItem = {
+      key: string;
+      type: MetadataValueType;
+      values: MetadataSummaryValueItem[];
+      description?: string;
+    };
+
+    type MetadataSummaryResult = {
+      summary: Record<
+        string,
+        | {
+            type?: MetadataValueType;
+            values?: Array<[string | number, number]>;
+          }
+        | Array<[string | number, number]>
+      >;
+    };
+
+    type MetadataSelector = {
+      document_ids?: string[];
+      metadata_condition?: Record<string, unknown>;
+    };
+
+    type MetadataUpdateOperation = {
+      key: string;
+      value?: unknown;
+      match?: string;
+      valueType?: string;
+    };
+
+    type MetadataDeleteOperation = {
+      key: string;
+      value?: string;
+    };
+
+    type UpdateDocumentsMetadataForm = {
+      selector?: MetadataSelector;
+      updates?: MetadataUpdateOperation[];
+      deletes?: MetadataDeleteOperation[];
+    };
+
+    type MetadataConfigField = {
+      key: string;
+      type: MetadataValueType;
+      description?: string;
+      enum?: string[];
+    };
+
+    type MetadataConfigResult = {
+      metadata: MetadataConfigField[];
+      builtInMetadata: MetadataConfigField[];
+      built_in_metadata?: MetadataConfigField[];
+    };
+
+    type UpdateMetadataConfigForm = {
+      metadata?: MetadataConfigField[];
+      builtInMetadata?: MetadataConfigField[];
+    };
   }
 }

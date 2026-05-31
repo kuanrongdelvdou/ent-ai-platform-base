@@ -210,3 +210,48 @@ export function fetchGetIngestionLog(kbId: string, logId: string) {
     method: 'get'
   });
 }
+
+export function fetchGetMetadataSummary(kbId: string, docIds?: string[]) {
+  return request<Api.Knowledge.MetadataSummaryResult>({
+    url: `/knowledge/metadataSummary/${kbId}`,
+    method: 'get',
+    params: {
+      docIds: docIds?.length ? docIds.join(',') : undefined
+    }
+  });
+}
+
+export function fetchUpdateDocumentsMetadata(kbId: string, data: Api.Knowledge.UpdateDocumentsMetadataForm) {
+  return request<null>({
+    url: `/knowledge/documentsMetadata/${kbId}`,
+    method: 'patch',
+    data
+  });
+}
+
+export function fetchGetMetadataConfig(kbId: string) {
+  return request<Api.Knowledge.MetadataConfigResult>({
+    url: `/knowledge/metadataConfig/${kbId}`,
+    method: 'get'
+  });
+}
+
+export function fetchUpdateMetadataConfig(kbId: string, data: Api.Knowledge.UpdateMetadataConfigForm) {
+  return request<null>({
+    url: `/knowledge/metadataConfig/${kbId}`,
+    method: 'put',
+    data
+  });
+}
+
+export function fetchUpdateDocumentMetadataConfig(
+  kbId: string,
+  docId: string,
+  data: Api.Knowledge.UpdateMetadataConfigForm
+) {
+  return request<null>({
+    url: `/knowledge/documentMetadataConfig/${kbId}/${docId}`,
+    method: 'put',
+    data
+  });
+}
