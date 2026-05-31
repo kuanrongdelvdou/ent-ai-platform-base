@@ -153,6 +153,9 @@ const uploadLimitTip =
 const canCreateKnowledgeBase = computed(
   () => hasAuth('knowledge:add') && aiReadiness.value?.status === 'READY'
 );
+const activeKnowledgeBaseTotalSize = computed(() =>
+  docs.value.reduce((sum, item) => sum + (Number(item.size) > 0 ? Number(item.size) : 0), 0)
+);
 
 function hasMetadataFilterValue(source: Record<string, string[]>) {
   return Object.values(source).some(values => Array.isArray(values) && values.length > 0);
@@ -467,6 +470,15 @@ function getCardMenuOptions() {
 function getDocumentCount(kb: Api.Knowledge.KnowledgeBase) {
   const docCount = (kb as any).documentCount ?? (kb as any).document_count ?? (kb as any).docNum ?? (kb as any).doc_num;
   return typeof docCount === 'number' ? docCount : 0;
+}
+
+function formatFileSize(bytes?: number) {
+  const size = Number(bytes ?? 0);
+  if (!Number.isFinite(size) || size <= 0) return '0 B';
+  if (size < 1024) return `${Math.round(size)} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 function getDatasetInitial(name: string) {
@@ -1200,7 +1212,10 @@ onBeforeUnmount(() => {
             <span class="knowledge-detail__avatar">{{ getDatasetInitial(activeKnowledgeBase.name) }}</span>
             <div class="knowledge-detail__kb-main">
               <p class="knowledge-detail__kb-name">{{ activeKnowledgeBase.name }}</p>
-              <p class="knowledge-detail__kb-meta">{{ getDocumentCount(activeKnowledgeBase) }} 个文件</p>
+              <p class="knowledge-detail__kb-meta">
+                {{ getDocumentCount(activeKnowledgeBase) }} 个文件
+                <span class="knowledge-detail__kb-size">{{ formatFileSize(activeKnowledgeBaseTotalSize) }}</span>
+              </p>
               <p class="knowledge-detail__kb-meta">创建于 {{ formatDate(activeKnowledgeBase.createTime) }}</p>
             </div>
           </div>
@@ -1640,6 +1655,10 @@ onBeforeUnmount(() => {
   color: #6b7280;
   font-size: 13px;
   line-height: 1.4;
+}
+
+.knowledge-detail__kb-size {
+  margin-left: 10px;
 }
 
 .knowledge-detail__tabs {
