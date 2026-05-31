@@ -51,6 +51,7 @@ const docsPage = ref(1);
 const docsPageSize = ref(10);
 const docsTotal = ref(0);
 const docsKeywords = ref('');
+const lastDocsLoadError = ref('');
 const checkedDocIds = ref<string[]>([]);
 
 const docFilterLoading = ref(false);
@@ -701,9 +702,10 @@ async function loadDocumentFilters() {
 }
 
 async function loadDocuments(resetPage = false) {
-  if (!activeKnowledgeBase.value) return;
+  if (!activeKnowledgeBase.value) return false;
   if (resetPage) docsPage.value = 1;
 
+  lastDocsLoadError.value = '';
   docsLoading.value = true;
   try {
     const { error, data } = await fetchGetDocumentList(activeKnowledgeBase.value.id, {
@@ -715,12 +717,18 @@ async function loadDocuments(resetPage = false) {
       metadata: hasMetadataFilterValue(selectedMetadataFilters.value) ? selectedMetadataFilters.value : undefined,
       return_empty_metadata: includeEmptyMetadata.value || undefined
     });
-    if (error || !data) return;
+    if (error || !data) {
+      docs.value = [];
+      docsTotal.value = 0;
+      lastDocsLoadError.value = String(error || '');
+      return false;
+    }
 
     docs.value = (data.records || []).map(normalizeDocument);
     docsTotal.value = data.total || 0;
     docsPage.value = data.current || docsPage.value;
     docsPageSize.value = data.size || docsPageSize.value;
+    return true;
   } finally {
     docsLoading.value = false;
   }
@@ -755,7 +763,13 @@ async function handleEnterKnowledgeBase(item: Api.Knowledge.KnowledgeBase) {
   pendingMetadataFilters.value = {};
   includeEmptyMetadata.value = false;
   pendingIncludeEmptyMetadata.value = false;
-  await Promise.all([loadDocumentFilters(), loadDocuments(true)]);
+  await loadDocumentFilters();
+  const loaded = await loadDocuments(true);
+  if (!loaded && lastDocsLoadError.value.includes('知识库不存在')) {
+    window.$message?.warning('该知识库在 RAGFlow 中不存在，请删除后重建。');
+    activeKnowledgeBase.value = null;
+    await loadKnowledgeBaseList();
+  }
 }
 
 function handleBackToList() {
