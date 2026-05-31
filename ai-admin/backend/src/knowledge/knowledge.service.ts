@@ -607,6 +607,13 @@ export class KnowledgeService {
     const createDate = String(item.create_date ?? item.createDate ?? '').trim();
     const processBeginAt = String(item.process_begin_at ?? item.processBeginAt ?? '').trim();
 
+    const createTime = this.normalizeDateTimeField(
+      item.create_date ?? item.createDate ?? item.create_time ?? item.created_at ?? item.createTime,
+    );
+    const updateTime = this.normalizeDateTimeField(
+      item.update_date ?? item.updateDate ?? item.update_time ?? item.updated_at ?? item.updateTime,
+    );
+
     return {
       id: String(item.id ?? ''),
       name: String(item.name ?? '-'),
@@ -624,8 +631,8 @@ export class KnowledgeService {
       pipelineName,
       parserConfig: (item.parser_config ?? item.parserConfig ?? null) as Record<string, unknown> | null,
       metaFields: (item.meta_fields ?? item.metaFields ?? {}) as Record<string, unknown>,
-      createTime: String(item.create_time ?? item.created_at ?? item.createTime ?? ''),
-      updateTime: String(item.update_time ?? item.updated_at ?? item.updateTime ?? ''),
+      createTime,
+      updateTime,
       createDate,
       suffix,
       nickname,
@@ -641,5 +648,25 @@ export class KnowledgeService {
       progress_msg: progressMsg,
       create_date: createDate,
     };
+  }
+
+  private normalizeDateTimeField(value: unknown) {
+    if (value === null || value === undefined || value === '') return '';
+
+    const text = String(value).trim();
+    if (!text) return '';
+
+    const isTimestamp = /^\d{11,17}$/.test(text);
+    if (isTimestamp) {
+      const millis = Number(text);
+      if (Number.isFinite(millis)) {
+        const date = new Date(millis);
+        if (!Number.isNaN(date.getTime())) {
+          return date.toISOString();
+        }
+      }
+    }
+
+    return text;
   }
 }

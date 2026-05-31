@@ -286,7 +286,9 @@ describe('KnowledgeService', () => {
         parseMethod: 'naive',
         chunk_method: 'naive',
         chunkNum: 3,
-        tokenNum: 42
+        tokenNum: 42,
+        createTime: '2026-05-31T10:29:12.463Z',
+        updateTime: '2026-05-31T10:29:12.463Z'
       })
     );
   });
