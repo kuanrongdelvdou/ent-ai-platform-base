@@ -1912,12 +1912,6 @@ onBeforeUnmount(() => {
 }
 
 :deep(.knowledge-doc-row .doc-actions) {
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-:deep(.knowledge-doc-row:hover .doc-actions),
-:deep(.knowledge-doc-row:focus-within .doc-actions) {
   opacity: 1;
 }
 
