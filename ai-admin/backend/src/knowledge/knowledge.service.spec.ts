@@ -34,6 +34,41 @@ describe('KnowledgeService', () => {
     );
   });
 
+  it('loads dataset document count from RAGFlow for knowledge base cards', async () => {
+    const prisma = {
+      knowledgeBase: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'kb-1',
+            name: '政策库',
+            description: null,
+            datasetId: 'dataset-1',
+            chunkMethod: 'naive',
+            parserConfig: null,
+            status: 1,
+            createdAt: new Date('2026-05-31T08:00:00.000Z'),
+            updatedAt: new Date('2026-05-31T08:10:00.000Z'),
+            knowledgeBaseRoles: []
+          }
+        ]),
+        count: jest.fn().mockResolvedValue(1)
+      }
+    };
+    const ragflow = {
+      listDocuments: jest.fn().mockResolvedValue({ success: true, data: { total: 7, docs: [] } })
+    };
+    const access = {
+      buildAccessibleKnowledgeBaseWhere: jest.fn().mockResolvedValue({})
+    };
+    const service = new KnowledgeService(prisma as any, ragflow as any, access as any, {} as any);
+
+    const result = await service.getList({ current: 1, size: 10, userId: 'user-1' });
+
+    expect(ragflow.listDocuments).toHaveBeenCalledWith('dataset-1', { page: 1, page_size: 1 });
+    expect(result.records[0].documentCount).toBe(7);
+    expect(result.records[0].docNum).toBe(7);
+  });
+
   it('checks AI readiness before creating a knowledge base', async () => {
     const prisma = {
       knowledgeBase: {

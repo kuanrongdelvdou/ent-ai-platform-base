@@ -39,6 +39,29 @@ export class KnowledgeService {
     return new Set(model?.fields.map(item => item.name) ?? []);
   }
 
+  private async getDatasetDocumentCountMap(datasetIds: Array<string | null | undefined>) {
+    const validDatasetIds = [...new Set(datasetIds.filter((id): id is string => Boolean(id)).map(id => String(id)))];
+    const map = new Map<string, number>();
+
+    if (!validDatasetIds.length) {
+      return map;
+    }
+
+    await Promise.all(
+      validDatasetIds.map(async (datasetId) => {
+        const result = await this.ragflow.listDocuments(datasetId, { page: 1, page_size: 1 });
+        if (!result.success) {
+          this.log.warn('获取知识库文档数量失败', { datasetId, error: result.error });
+          return;
+        }
+        const normalized = this.normalizeRagflowList(result.data, 'naive');
+        map.set(datasetId, Number(normalized.total ?? 0));
+      }),
+    );
+
+    return map;
+  }
+
   async getList(params: KnowledgeBaseListDto & { userId?: string }) {
     this.log.debug('查询知识库列表', params);
     const current = params.current ?? 1;
@@ -63,6 +86,7 @@ export class KnowledgeService {
         include: { knowledgeBaseRoles: { include: { role: true } } },
       }),
     ]);
+    const docCountMap = await this.getDatasetDocumentCountMap(list.map(item => item.datasetId));
 
     return {
       current,
@@ -88,6 +112,8 @@ export class KnowledgeService {
           roleName: role.role.name,
           roleCode: role.role.code,
         })),
+        documentCount: item.datasetId ? (docCountMap.get(item.datasetId) ?? 0) : 0,
+        docNum: item.datasetId ? (docCountMap.get(item.datasetId) ?? 0) : 0,
         createTime: item.createdAt.toISOString(),
         updateTime: item.updatedAt.toISOString(),
       })),

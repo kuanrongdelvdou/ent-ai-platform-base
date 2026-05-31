@@ -214,6 +214,29 @@ const emptyMetadataCount = computed(() => {
 
 const showReparseDelete = computed(() => Number(reparseTarget.value?.chunkNum ?? 0) > 0);
 const showReparseApplyKb = computed(() => Boolean((reparseTarget.value?.parserConfig as any)?.enable_metadata));
+const hasCheckedDocs = computed(() => checkedDocIds.value.length > 0);
+const batchActionOptions = computed<DropdownOption[]>(() => [
+  {
+    key: 'metadata',
+    label: '批量元数据',
+    disabled: !hasCheckedDocs.value || !hasAuth('knowledge:edit')
+  },
+  {
+    key: 'parse',
+    label: '批量解析',
+    disabled: !hasCheckedDocs.value
+  },
+  {
+    key: 'stop',
+    label: '停止解析',
+    disabled: !hasCheckedDocs.value
+  },
+  {
+    key: 'delete',
+    label: '批量删除',
+    disabled: !hasCheckedDocs.value || !hasAuth('knowledge:delete')
+  }
+]);
 
 const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() => [
   {
@@ -907,6 +930,40 @@ function handleOpenBatchMetadata() {
   metadataVisible.value = true;
 }
 
+function handleBatchActionSelect(key: string | number) {
+  if (!checkedDocIds.value.length) return;
+
+  const ids = [...checkedDocIds.value];
+  const action = String(key);
+
+  if (action === 'metadata') {
+    handleOpenBatchMetadata();
+    return;
+  }
+
+  if (action === 'parse') {
+    handleParseDocuments(ids);
+    return;
+  }
+
+  if (action === 'stop') {
+    handleStopDocuments(ids);
+    return;
+  }
+
+  if (action === 'delete') {
+    window.$dialog?.warning({
+      title: '提示',
+      content: '确认删除选中文件吗？',
+      positiveText: '确认',
+      negativeText: '取消',
+      onPositiveClick: () => {
+        handleDeleteDocuments(ids);
+      }
+    });
+  }
+}
+
 async function handleMetadataSaved() {
   await Promise.all([loadDocuments(), loadDocumentFilters()]);
 }
@@ -1171,11 +1228,13 @@ onBeforeUnmount(() => {
                 <p class="knowledge-detail__main-desc">解析成功后才能问答。</p>
               </div>
               <div class="knowledge-detail__toolbar-actions">
-                <NButton quaternary circle disabled>
-                  <template #icon>
-                    <icon-carbon-magic-wand />
-                  </template>
-                </NButton>
+                <NDropdown trigger="click" :options="batchActionOptions" @select="handleBatchActionSelect">
+                  <NButton quaternary circle :disabled="!hasCheckedDocs">
+                    <template #icon>
+                      <icon-carbon-magic-wand />
+                    </template>
+                  </NButton>
+                </NDropdown>
                 <NPopover
                   trigger="click"
                   placement="bottom-end"
@@ -1276,7 +1335,7 @@ onBeforeUnmount(() => {
               </div>
             </header>
 
-            <section class="knowledge-detail__batch-actions">
+            <section v-if="false" class="knowledge-detail__batch-actions">
               <NButton :disabled="!checkedDocIds.length || !hasAuth('knowledge:edit')" @click="handleOpenBatchMetadata">
                 批量元数据
               </NButton>
