@@ -424,8 +424,20 @@ const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() =>
 
 function getCardMenuOptions() {
   const options: DropdownOption[] = [];
-  if (hasAuth('knowledge:edit')) options.push({ label: '重命名', key: 'rename' });
-  if (hasAuth('knowledge:delete')) options.push({ label: '删除', key: 'delete' });
+  if (hasAuth('knowledge:edit')) {
+    options.push({
+      label: '重命名',
+      key: 'rename',
+      icon: () => h(SvgIcon, { icon: 'lucide:pen-line' })
+    });
+  }
+  if (hasAuth('knowledge:delete')) {
+    options.push({
+      label: '删除',
+      key: 'delete',
+      icon: () => h(SvgIcon, { icon: 'lucide:trash-2' })
+    });
+  }
   return options;
 }
 
