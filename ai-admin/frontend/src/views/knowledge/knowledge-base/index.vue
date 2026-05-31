@@ -1335,20 +1335,6 @@ onBeforeUnmount(() => {
               </div>
             </header>
 
-            <section v-if="false" class="knowledge-detail__batch-actions">
-              <NButton :disabled="!checkedDocIds.length || !hasAuth('knowledge:edit')" @click="handleOpenBatchMetadata">
-                批量元数据
-              </NButton>
-              <NButton :disabled="!checkedDocIds.length" @click="handleParseDocuments(checkedDocIds)">批量解析</NButton>
-              <NButton :disabled="!checkedDocIds.length" @click="handleStopDocuments(checkedDocIds)">停止解析</NButton>
-              <NPopconfirm :disabled="!checkedDocIds.length" @positive-click="handleDeleteDocuments(checkedDocIds)">
-                <template #trigger>
-                  <NButton type="error" :disabled="!checkedDocIds.length">批量删除</NButton>
-                </template>
-                确认删除选中文件吗？
-              </NPopconfirm>
-            </section>
-
             <NDataTable
               v-model:checked-row-keys="checkedDocIds"
               :loading="docsLoading"
@@ -1724,12 +1710,6 @@ onBeforeUnmount(() => {
 
 .knowledge-detail__search {
   width: 180px;
-}
-
-.knowledge-detail__batch-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .knowledge-detail__table {
