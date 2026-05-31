@@ -360,7 +360,7 @@ const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() =>
           },
           {
             icon: () => h(SvgIcon, { icon }),
-            default: () => (isRunning ? '停止' : '')
+            default: () => null
           }
         ),
         h(
