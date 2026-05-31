@@ -24,6 +24,8 @@ type CurrentUserRef = { userId: string };
 @Injectable()
 export class KnowledgeService {
   private readonly log = new AppLoggerService('KnowledgeService');
+  private readonly maxUploadBatchCount = 32;
+  private readonly maxUploadBatchTotalBytes = 1024 * 1024 * 1024;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -269,6 +271,19 @@ export class KnowledgeService {
     files: Array<{ buffer: Buffer; originalname: string; mimetype: string }>,
     user: CurrentUserRef,
   ) {
+    if (!files.length) {
+      throw new BadRequestException('上传文件失败：请至少选择一个文件');
+    }
+
+    if (files.length > this.maxUploadBatchCount) {
+      throw new BadRequestException(`上传文件失败：单次最多上传 ${this.maxUploadBatchCount} 个文件`);
+    }
+
+    const totalBytes = files.reduce((sum, file) => sum + (file?.buffer?.length ?? 0), 0);
+    if (totalBytes > this.maxUploadBatchTotalBytes) {
+      throw new BadRequestException('上传文件失败：单次上传总大小不能超过 1GB，请分批上传');
+    }
+
     const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
     const result = await this.ragflow.uploadDocuments(kb.datasetId!, files);
     if (!result.success) throw new BadRequestException(`上传文档失败：${result.error}`);
@@ -277,6 +292,7 @@ export class KnowledgeService {
     this.log.info('上传文档成功', {
       kbId,
       fileCount: files.length,
+      totalBytes,
       filenames: files.map((item) => item.originalname),
       userId: user.userId,
     });

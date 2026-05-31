@@ -142,11 +142,6 @@ const runStateColorMap: Record<string, string> = {
   SCHEDULE: '#14b8a6'
 };
 
-const parseMethodOptions: DropdownOption[] = Object.entries(parseMethodLabelMap).map(([key, label]) => ({
-  key,
-  label
-}));
-
 const addFileOptions: DropdownOption[] = [
   { key: 'upload', label: '上传文件' },
   { key: 'empty', label: '新增空白文件' }
@@ -293,28 +288,7 @@ const documentColumns = computed<DataTableColumns<Api.Knowledge.Document>>(() =>
     title: '解析',
     width: 140,
     align: 'center',
-    render: row =>
-      h(
-        NDropdown,
-        {
-          trigger: 'click',
-          options: parseMethodOptions,
-          disabled: !hasAuth('knowledge:edit') || isDocumentRunning(row),
-          onSelect: key => handleChangeDocumentParseMethod(row, String(key))
-        },
-        {
-          default: () =>
-            h(
-              NButton,
-              {
-                text: true,
-                size: 'small',
-                class: 'doc-parser-btn'
-              },
-              { default: () => getParseMethodText(row) }
-            )
-        }
-      )
+    render: row => h('span', { class: 'doc-parser-text' }, getParseMethodText(row))
   },
   {
     key: 'runStatus',
@@ -573,6 +547,8 @@ function getParseMethodText(row: Api.Knowledge.Document) {
     (row as any).parseMethod ??
       (row as any).chunkMethod ??
       (row as any).chunk_method ??
+      (row as any).parserId ??
+      (row as any).parser_id ??
       activeKnowledgeBase.value?.chunkMethod ??
       ''
   )
@@ -610,9 +586,9 @@ function normalizeDocument(document: any): Api.Knowledge.Document {
     updateTime: document?.updateTime ?? document?.update_time ?? document?.updated_at
   };
 
-  (normalized as any).chunkMethod = document?.chunkMethod ?? document?.chunk_method ?? null;
-  (normalized as any).chunk_method = document?.chunkMethod ?? document?.chunk_method ?? null;
-  (normalized as any).parseMethod = document?.chunkMethod ?? document?.chunk_method ?? null;
+  (normalized as any).chunkMethod = document?.chunkMethod ?? document?.chunk_method ?? document?.parserId ?? document?.parser_id ?? null;
+  (normalized as any).chunk_method = document?.chunkMethod ?? document?.chunk_method ?? document?.parserId ?? document?.parser_id ?? null;
+  (normalized as any).parseMethod = document?.chunkMethod ?? document?.chunk_method ?? document?.parserId ?? document?.parser_id ?? null;
   (normalized as any).pipeline_id = document?.pipelineId ?? document?.pipeline_id ?? null;
   (normalized as any).pipeline_name = document?.pipelineName ?? document?.pipeline_name ?? null;
   (normalized as any).meta_fields = document?.metaFields ?? document?.meta_fields ?? {};
@@ -831,17 +807,6 @@ function handleRunActionClick(row: Api.Knowledge.Document) {
 async function handleUpdateDocumentStatus(docIds: string[], status: 0 | 1) {
   if (!activeKnowledgeBase.value || !docIds.length) return;
   const { error } = await fetchUpdateDocumentStatus(activeKnowledgeBase.value.id, docIds, status);
-  if (error) return;
-  await loadDocuments();
-}
-
-async function handleChangeDocumentParseMethod(row: Api.Knowledge.Document, method: string) {
-  if (!activeKnowledgeBase.value) return;
-  const nextMethod = method.trim().toLowerCase();
-  if (!nextMethod) return;
-  if ((row.chunkMethod || '').toLowerCase() === nextMethod) return;
-
-  const { error } = await fetchUpdateDocument(activeKnowledgeBase.value.id, row.id, { chunkMethod: nextMethod });
   if (error) return;
   await loadDocuments();
 }
@@ -1746,7 +1711,7 @@ onBeforeUnmount(() => {
   border-radius: 8px;
 }
 
-:deep(.doc-parser-btn) {
+.doc-parser-text {
   color: #6b7280;
 }
 

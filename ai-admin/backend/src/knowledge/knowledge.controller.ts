@@ -101,7 +101,7 @@ export class KnowledgeController {
   @OperationLog('知识库', '上传文档')
   @Post('uploadDocument/:kbId')
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesInterceptor('file', 64))
+  @UseInterceptors(FilesInterceptor('file', 32))
   uploadDocument(@Param('kbId') kbId: string, @UploadedFiles() files: any[], @CurrentUser() user: { userId: string }) {
     if (!files?.length) throw new BadRequestException('缺少文档文件');
     return this.knowledgeService.uploadDocuments(
