@@ -177,6 +177,59 @@ export class RagflowApiService {
     });
   }
 
+  async getMetadataSummary(datasetId: string, docIds?: string[]) {
+    return this.request<Record<string, unknown>>(`/datasets/${datasetId}/metadata/summary`, {
+      params: {
+        doc_ids: docIds?.length ? docIds.join(',') : undefined,
+      },
+    });
+  }
+
+  async updateDocumentsMetadata(
+    datasetId: string,
+    payload: {
+      selector?: { document_ids?: string[]; metadata_condition?: Record<string, unknown> };
+      updates?: Array<{ key: string; value?: unknown; match?: string; valueType?: string }>;
+      deletes?: Array<{ key: string; value?: string }>;
+    },
+  ) {
+    return this.request<Record<string, unknown>>(`/datasets/${datasetId}/documents/metadatas`, {
+      method: 'PATCH',
+      body: payload,
+    });
+  }
+
+  async getMetadataConfig(datasetId: string) {
+    return this.request<Record<string, unknown>>(`/datasets/${datasetId}/metadata/config`);
+  }
+
+  async updateMetadataConfig(
+    datasetId: string,
+    payload: {
+      metadata?: Array<{ key: string; type: string; description?: string; enum?: string[] }>;
+      built_in_metadata?: Array<{ key: string; type: string; description?: string; enum?: string[] }>;
+    },
+  ) {
+    return this.request<Record<string, unknown>>(`/datasets/${datasetId}/metadata/config`, {
+      method: 'PUT',
+      body: payload,
+    });
+  }
+
+  async updateDocumentMetadataConfig(
+    datasetId: string,
+    documentId: string,
+    payload: {
+      metadata?: Array<{ key: string; type: string; description?: string; enum?: string[] }>;
+      built_in_metadata?: Array<{ key: string; type: string; description?: string; enum?: string[] }>;
+    },
+  ) {
+    return this.request<Record<string, unknown>>(`/datasets/${datasetId}/documents/${documentId}/metadata/config`, {
+      method: 'PUT',
+      body: payload,
+    });
+  }
+
   async ingestDocuments(data: {
     doc_ids: string[];
     run: 1 | 2;

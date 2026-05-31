@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Patch,
   Param,
   Post,
   Put,
@@ -29,11 +30,14 @@ import {
   DocumentListDto,
   IngestionLogsDto,
   KnowledgeBaseListDto,
+  MetadataSummaryDto,
   ParseDocumentDto,
   SearchDto,
+  UpdateDocumentsMetadataDto,
   UpdateDocumentDto,
   UpdateDocumentStatusDto,
   UpdateKnowledgeBaseDto,
+  UpdateMetadataConfigDto,
 } from './dto/knowledge.dto';
 import { KnowledgeService } from './knowledge.service';
 
@@ -240,5 +244,52 @@ export class KnowledgeController {
   ) {
     return this.knowledgeService.getIngestionLog(kbId, logId, user);
   }
-}
 
+  @Get('metadataSummary/:kbId')
+  metadataSummary(
+    @Param('kbId') kbId: string,
+    @Query() dto: MetadataSummaryDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.knowledgeService.getMetadataSummary(kbId, dto, user);
+  }
+
+  @Permissions('knowledge:edit')
+  @OperationLog('知识库', '批量更新文档元数据')
+  @Patch('documentsMetadata/:kbId')
+  documentsMetadata(
+    @Param('kbId') kbId: string,
+    @Body() dto: UpdateDocumentsMetadataDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.knowledgeService.updateDocumentsMetadata(kbId, dto, user);
+  }
+
+  @Get('metadataConfig/:kbId')
+  metadataConfig(@Param('kbId') kbId: string, @CurrentUser() user: { userId: string }) {
+    return this.knowledgeService.getMetadataConfig(kbId, user);
+  }
+
+  @Permissions('knowledge:edit')
+  @OperationLog('知识库', '更新知识库元数据配置')
+  @Put('metadataConfig/:kbId')
+  updateMetadataConfig(
+    @Param('kbId') kbId: string,
+    @Body() dto: UpdateMetadataConfigDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.knowledgeService.updateMetadataConfig(kbId, dto, user);
+  }
+
+  @Permissions('knowledge:edit')
+  @OperationLog('知识库', '更新文档元数据配置')
+  @Put('documentMetadataConfig/:kbId/:docId')
+  updateDocumentMetadataConfig(
+    @Param('kbId') kbId: string,
+    @Param('docId') docId: string,
+    @Body() dto: UpdateMetadataConfigDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.knowledgeService.updateDocumentMetadataConfig(kbId, docId, dto, user);
+  }
+}

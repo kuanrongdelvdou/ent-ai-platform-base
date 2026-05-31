@@ -8,10 +8,13 @@ import {
   DocumentListDto,
   IngestionLogsDto,
   KnowledgeBaseListDto,
+  MetadataSummaryDto,
   SearchDto,
+  UpdateDocumentsMetadataDto,
   UpdateDocumentDto,
   UpdateDocumentStatusDto,
   UpdateKnowledgeBaseDto,
+  UpdateMetadataConfigDto,
 } from './dto/knowledge.dto';
 import { KnowledgeAccessService } from './knowledge-access.service';
 import { RagflowApiService } from './ragflow-api.service';
@@ -419,6 +422,97 @@ export class KnowledgeService {
     const result = await this.ragflow.getIngestionLog(kb.datasetId!, logId);
     if (!result.success) throw new BadRequestException(`获取日志详情失败：${result.error}`);
     return result.data ?? {};
+  }
+
+  async getMetadataSummary(kbId: string, dto: MetadataSummaryDto, user: CurrentUserRef) {
+    const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
+    const result = await this.ragflow.getMetadataSummary(kb.datasetId!, dto.docIds);
+    if (!result.success) throw new BadRequestException(`获取元数据摘要失败：${result.error}`);
+    const payload = (result.data ?? {}) as Record<string, unknown>;
+    const summary = payload.summary && typeof payload.summary === 'object' ? payload.summary : {};
+    return { summary };
+  }
+
+  async updateDocumentsMetadata(kbId: string, dto: UpdateDocumentsMetadataDto, user: CurrentUserRef) {
+    const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
+    const updates = Array.isArray(dto.updates) ? dto.updates : [];
+    const deletes = Array.isArray(dto.deletes) ? dto.deletes : [];
+    if (!updates.length && !deletes.length) {
+      throw new BadRequestException('更新元数据失败：updates 和 deletes 不能同时为空');
+    }
+
+    const payload = {
+      selector: dto.selector,
+      updates: updates.map(item => ({
+        key: item.key,
+        value: item.value,
+        match: item.match,
+        valueType: item.valueType,
+      })),
+      deletes: deletes.map(item => ({
+        key: item.key,
+        value: item.value,
+      })),
+    };
+
+    const result = await this.ragflow.updateDocumentsMetadata(kb.datasetId!, payload);
+    if (!result.success) throw new BadRequestException(`更新元数据失败：${result.error}`);
+    return result.data ?? null;
+  }
+
+  async getMetadataConfig(kbId: string, user: CurrentUserRef) {
+    const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
+    const result = await this.ragflow.getMetadataConfig(kb.datasetId!);
+    if (!result.success) throw new BadRequestException(`获取元数据配置失败：${result.error}`);
+
+    const payload = (result.data ?? {}) as Record<string, unknown>;
+    const metadata = Array.isArray(payload.metadata) ? payload.metadata : [];
+    const builtInMetadata = Array.isArray(payload.built_in_metadata)
+      ? payload.built_in_metadata
+      : Array.isArray(payload.builtInMetadata)
+        ? payload.builtInMetadata
+        : [];
+
+    return {
+      metadata,
+      builtInMetadata,
+      built_in_metadata: builtInMetadata,
+    };
+  }
+
+  async updateMetadataConfig(kbId: string, dto: UpdateMetadataConfigDto, user: CurrentUserRef) {
+    const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
+    const payload = this.buildMetadataConfigPayload(dto);
+    const result = await this.ragflow.updateMetadataConfig(kb.datasetId!, payload);
+    if (!result.success) throw new BadRequestException(`更新元数据配置失败：${result.error}`);
+    return result.data ?? null;
+  }
+
+  async updateDocumentMetadataConfig(kbId: string, docId: string, dto: UpdateMetadataConfigDto, user: CurrentUserRef) {
+    const kb = await this.access.assertCanAccessKnowledgeBase(kbId, user.userId);
+    const payload = this.buildMetadataConfigPayload(dto);
+    const result = await this.ragflow.updateDocumentMetadataConfig(kb.datasetId!, docId, payload);
+    if (!result.success) throw new BadRequestException(`更新文档元数据配置失败：${result.error}`);
+    return result.data ?? null;
+  }
+
+  private buildMetadataConfigPayload(dto: UpdateMetadataConfigDto) {
+    const normalize = (fields?: Array<{ key: string; type: string; description?: string; enum?: string[] }>) =>
+      (fields ?? [])
+        .map(field => ({
+          key: field.key?.trim(),
+          type: field.type,
+          description: field.description?.trim() || undefined,
+          enum: Array.isArray(field.enum)
+            ? field.enum.map(item => item.trim()).filter(Boolean)
+            : undefined,
+        }))
+        .filter(field => field.key);
+
+    return {
+      metadata: normalize(dto.metadata),
+      built_in_metadata: normalize(dto.builtInMetadata),
+    };
   }
 
   private normalizeRagflowList(data: unknown, fallbackChunkMethod: string) {

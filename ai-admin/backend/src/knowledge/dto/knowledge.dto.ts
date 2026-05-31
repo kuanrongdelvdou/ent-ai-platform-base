@@ -1,5 +1,16 @@
 import { Transform, Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 
 export class CreateKnowledgeBaseDto {
   @IsString()
@@ -406,4 +417,107 @@ export class IngestionLogsDto {
   @IsOptional()
   @IsString()
   keywords?: string;
+}
+
+export class MetadataSummaryDto {
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (Array.isArray(value)) return value;
+    return String(value)
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean);
+  })
+  @IsArray()
+  @IsString({ each: true })
+  docIds?: string[];
+}
+
+export class MetadataSelectorDto {
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  document_ids?: string[];
+
+  @IsOptional()
+  @IsObject()
+  metadata_condition?: Record<string, unknown>;
+}
+
+export class MetadataUpdateOpDto {
+  @IsString()
+  key: string;
+
+  @IsOptional()
+  value?: unknown;
+
+  @IsOptional()
+  @IsString()
+  match?: string;
+
+  @IsOptional()
+  @IsString()
+  valueType?: string;
+}
+
+export class MetadataDeleteOpDto {
+  @IsString()
+  key: string;
+
+  @IsOptional()
+  @IsString()
+  value?: string;
+}
+
+export class UpdateDocumentsMetadataDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => MetadataSelectorDto)
+  selector?: MetadataSelectorDto;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MetadataUpdateOpDto)
+  updates?: MetadataUpdateOpDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MetadataDeleteOpDto)
+  deletes?: MetadataDeleteOpDto[];
+}
+
+const metadataFieldTypes = ['string', 'list', 'time', 'number'] as const;
+
+export class AutoMetadataFieldDto {
+  @IsString()
+  key: string;
+
+  @IsIn(metadataFieldTypes)
+  type: (typeof metadataFieldTypes)[number];
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  enum?: string[];
+}
+
+export class UpdateMetadataConfigDto {
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AutoMetadataFieldDto)
+  metadata?: AutoMetadataFieldDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AutoMetadataFieldDto)
+  builtInMetadata?: AutoMetadataFieldDto[];
 }
